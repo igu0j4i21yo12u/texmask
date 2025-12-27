@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TexMask</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="address-dict.js" defer></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <div class="page">
+      <header class="masthead">
+        <p class="eyebrow">ブラウザで楽々マスキング！</p>
+        <h1>TexMask</h1>
+      <p class="lede">
+        貼り付けたテキストを、ブラウザ内だけでマスキングします。<br />
+        外部へのデータ送信は行っておりませんので、ローカルにダウンロードしたりインターネット接続がなくても動作します。<br />
+        ※住所辞書の「最新版に更新」を実行する場合のみ、インターネット接続が必要です。
+      </p>
+      </header>
+
+      <div class="tabs" role="tablist" aria-label="表示タブ">
+        <button class="tab is-active" type="button" data-tab="work" role="tab" aria-selected="true">
+          入出力
+        </button>
+        <button class="tab" type="button" data-tab="settings" role="tab" aria-selected="false">
+          基本設定
+        </button>
+        <button class="tab" type="button" data-tab="dictionary" role="tab" aria-selected="false">
+          任意辞書
+        </button>
+        <button class="tab" type="button" data-tab="address" role="tab" aria-selected="false">
+          住所辞書
+        </button>
+      </div>
+
+      <main class="grid">
+        <section class="panel input tab-panel is-active" data-tab-panel="work" role="tabpanel">
+          <div class="panel-header">
+            <h2>入力</h2>
+            <div class="actions">
+              <label class="inline">
+                <span class="sr-only">サンプル</span>
+                <select id="sampleSelect">
+                  <option value="">サンプルを挿入</option>
+                  <option value="address">住所録</option>
+                  <option value="config">コンフィグ風</option>
+                  <option value="support">問い合わせメモ</option>
+                </select>
+              </label>
+              <label class="toggle">
+                <input id="autoMask" type="checkbox" checked />
+                自動マスク
+              </label>
+              <button id="clearBtn" class="ghost" type="button">クリア</button>
+            </div>
+          </div>
+          <textarea
+            id="inputText"
+            wrap="off"
+            placeholder="・ここに入力したテキストをマスキングします。&#10;・マスキングの細かな調整は、「基本設定」「任意辞書」タブで行えます。"
+          ></textarea>
+        </section>
+
+        <section class="panel output tab-panel is-active" data-tab-panel="work" role="tabpanel">
+          <div class="panel-header">
+            <h2>出力</h2>
+            <div class="actions">
+              <button id="maskBtn" class="primary" type="button">マスク実行</button>
+              <button id="copyBtn" class="ghost" type="button">コピー</button>
+            </div>
+          </div>
+          <textarea id="outputText" readonly wrap="off" placeholder="・ここにマスキングされたテキストが表示されます。"></textarea>
+        </section>
+
+        <section class="panel stats-panel output-settings tab-panel is-active" data-tab-panel="work" role="region">
+          <div class="output-settings-row" id="outputSettingsRow">
+            <div>
+              <label for="maskMode">出力モード</label>
+              <select id="maskMode">
+                <option value="pseudonymize" selected>仮名化 (&lt;IPv4_001&gt;)</option>
+                <option value="redact">伏せ字 (****)</option>
+              </select>
+            </div>
+            <div id="numberWidthRow">
+              <label for="numberWidth">仮名化の連番桁数</label>
+              <select id="numberWidth">
+                <option value="2">2桁 (例: &lt;IPv4_01&gt;)</option>
+                <option value="3" selected>3桁 (例: &lt;IPv4_001&gt;)</option>
+                <option value="4">4桁 (例: &lt;IPv4_0001&gt;)</option>
+              </select>
+            </div>
+            <div id="redactMaskRow" class="is-hidden">
+              <label for="redactMask">伏せ字文字列</label>
+              <select id="redactMask">
+                <option value="****">****</option>
+                <option value="<masked>">&lt;masked&gt;</option>
+                <option value="***(hidden)***">***(hidden)***</option>
+                <option value="custom">任意文字列</option>
+              </select>
+            </div>
+            <div id="redactCustomRow" class="is-hidden">
+              <label for="redactCustom">任意文字列</label>
+              <input id="redactCustom" type="text" placeholder="例: ***MASKED***" />
+            </div>
+          </div>
+          <div id="stats" class="stats"></div>
+        </section>
+
+        <aside class="panel settings tab-panel" data-tab-panel="settings" role="tabpanel">
+          <h2>基本設定</h2>
+          <p class="lede">
+            代表的な文字列について、マスキングするかどうかを選択できます。<br />
+            ここで使う判定は目安レベルなので、例えばIPv4アドレスは「500.999.0.1」のような値も検出されます。
+          </p>
+
+          <div class="setting-group">
+            <div class="group-header">
+              <span>ルール</span>
+              <div class="inline">
+                <button id="toggleAllBtn" class="ghost small" type="button">全部ON/OFF</button>
+                <button id="resetOrderBtn" class="ghost small" type="button">推奨順に戻す</button>
+              </div>
+            </div>
+            <div id="ruleList" class="rule-list"></div>
+          </div>
+
+        </aside>
+
+        <aside class="panel settings tab-panel" data-tab-panel="dictionary" role="tabpanel">
+          <h2>任意辞書</h2>
+          <p class="lede">
+            ここでは独自のルールを1行ずつ追加できます。<br />
+            各行で有効/無効、置換時の接頭子、方式、対象文字列、正規表現の扱いを設定します。
+          </p>
+          <div class="setting-group">
+            <span>辞書(任意)</span>
+            <div class="dict-table">
+              <div class="dict-header">
+                <span>有効</span>
+                <span>置換時の接頭子</span>
+                <span>方式</span>
+                <span>対象文字列</span>
+                <span>正規表現</span>
+                <span>削除</span>
+              </div>
+              <div id="dictRows" class="dict-rows"></div>
+            <div class="dict-actions">
+              <button id="dictAddRow" class="ghost small" type="button">行を追加</button>
+            </div>
+            <div id="dictTableStatus" class="dict-status"></div>
+          </div>
+            <div class="inline">
+              <label for="dictDefaultPrefix">置換時のデフォルト接頭子</label>
+              <input id="dictDefaultPrefix" type="text" value="DICT" placeholder="例: NAME" />
+            </div>
+            <div class="dict-advanced">
+              <div class="dict-advanced-header">上級者向け機能</div>
+              <div class="dict-actions">
+                <button id="dictImportBasic" class="ghost small" type="button">基本設定を転記</button>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <aside class="panel settings tab-panel" data-tab-panel="address" role="tabpanel">
+          <h2>住所辞書</h2>
+          <p class="lede">
+            住所（都道府県・市区町村）を自動検出してマスキングします。<br />
+            データは<a href="https://geolonia.github.io/japanese-addresses/" target="_blank" rel="noopener">Geolonia 住所データ</a>（CC BY 4.0）を使用し、都道府県+市区町村の辞書に加工しています。
+          </p>
+
+          <div class="setting-group">
+            <label class="toggle">
+              <input id="useAddressDict" type="checkbox" checked />
+              住所辞書を使用する
+            </label>
+
+            <div class="address-dict-info">
+              <div class="info-row">
+                <span class="info-label">現在のバージョン:</span>
+                <strong id="addressDictVersion">読み込み中...</strong>
+              </div>
+              <div class="info-row">
+                <span class="info-label">データソース:</span>
+                <span id="addressDictSource">ローカル同梱</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">データ件数:</span>
+                <span id="addressDictCount">-</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">最終更新:</span>
+                <span id="addressDictUpdated">-</span>
+              </div>
+            </div>
+
+            <div class="inline">
+              <button id="updateAddressDict" class="ghost small" type="button">最新版に更新</button>
+              <button id="resetAddressDict" class="ghost small" type="button">初期版に戻す</button>
+            </div>
+
+            <p class="dict-status">※ 更新にはインターネット接続が必要です。更新データはブラウザに保存されます。</p>
+          </div>
+
+          <div class="setting-group">
+            <span>プレビュー（一部）</span>
+            <div id="addressDictPreview" class="address-preview">
+              <!-- JavaScriptで動的に生成 -->
+            </div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <div id="presetDock" class="floating-preset" aria-label="マイ設定">
+      <button
+        id="presetToggle"
+        class="floating-preset-toggle"
+        type="button"
+        aria-expanded="false"
+      >
+        マイ設定
+        <span class="floating-handle" aria-hidden="true">⋮⋮</span>
+      </button>
+      <div id="presetPanel" class="floating-preset-panel" aria-hidden="true">
+        <div class="floating-preset-header">
+          <strong>マイ設定</strong>
+          <button id="presetClose" class="ghost small" type="button">閉じる</button>
+        </div>
+        <div class="floating-preset-body">
+          <div class="inline">
+            <select id="presetSelect">
+              <option value="">保存した設定を選択</option>
+            </select>
+            <button id="presetLoad" class="ghost small" type="button">保存した設定を呼び出す</button>
+            <button id="presetDelete" class="ghost small" type="button">削除</button>
+          </div>
+          <div class="inline">
+            <input id="presetName" type="text" placeholder="設定名(ex. configマスク用設定)" />
+            <button id="presetSave" class="ghost small" type="button">現在の設定を保存</button>
+          </div>
+          <div class="inline">
+            <button id="presetExport" class="ghost small" type="button">JSONに保存</button>
+            <button id="presetImport" class="ghost small" type="button">JSONを読み込み</button>
+            <input id="presetImportFile" type="file" accept=".json,application/json" hidden />
+          </div>
+        </div>
+      </div>
+    </div>
+    <footer class="app-footer">© 2025 igu0j4i21yo12u.</footer>
+  </body>
+</html>
