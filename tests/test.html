@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Text Masking Lab - Test</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f5f3ee;
+        --ink: #2b2a27;
+        --muted: #6f6a62;
+        --accent: #b04a3f;
+        --ok: #1c7a5b;
+        --ng: #b04a3f;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+        padding: 24px;
+      }
+
+      h1 {
+        margin: 0 0 12px;
+      }
+
+      .note {
+        color: var(--muted);
+        font-size: 13px;
+        margin-bottom: 16px;
+      }
+
+      ul {
+        list-style: none;
+        padding: 0;
+        margin: 0 0 16px;
+        display: grid;
+        gap: 8px;
+      }
+
+      li {
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: #fffefb;
+        border: 1px solid rgba(43, 42, 39, 0.12);
+      }
+
+      li.ok {
+        border-color: rgba(28, 122, 91, 0.4);
+      }
+
+      li.ng {
+        border-color: rgba(176, 74, 63, 0.4);
+      }
+
+      .tag {
+        display: inline-block;
+        min-width: 48px;
+        text-align: center;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        color: white;
+        margin-right: 8px;
+      }
+
+      .tag.ok {
+        background: var(--ok);
+      }
+
+      .tag.ng {
+        background: var(--ng);
+      }
+
+      iframe {
+        width: 0;
+        height: 0;
+        border: 0;
+        position: absolute;
+        left: -9999px;
+        top: -9999px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Text Masking Lab - Self Test</h1>
+    <div class="note">
+      このページはローカルで簡易テストを実行します。別ウィンドウを開かずに実施できます。
+    </div>
+    <ul id="results"></ul>
+    <iframe id="appFrame" src="../index.html"></iframe>
+
+    <script>
+      const results = document.getElementById("results");
+
+      function logResult(name, ok, detail) {
+        const li = document.createElement("li");
+        li.className = ok ? "ok" : "ng";
+        const tag = document.createElement("span");
+        tag.className = `tag ${ok ? "ok" : "ng"}`;
+        tag.textContent = ok ? "OK" : "NG";
+        const text = document.createElement("span");
+        text.textContent = detail ? `${name} - ${detail}` : name;
+        li.appendChild(tag);
+        li.appendChild(text);
+        results.appendChild(li);
+      }
+
+      function expect(condition, name, detail) {
+        logResult(name, Boolean(condition), detail || "");
+      }
+
+      function sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+
+      async function runTests(appWindow) {
+        try {
+          appWindow.localStorage?.clear?.();
+        } catch (err) {
+          // ignore
+        }
+
+        const input = appWindow.document.getElementById("inputText");
+        const output = appWindow.document.getElementById("outputText");
+        const maskMode = appWindow.document.getElementById("maskMode");
+        const numberWidth = appWindow.document.getElementById("numberWidth");
+        const dictRows = appWindow.document.getElementById("dictRows");
+        const dictAddRow = appWindow.document.getElementById("dictAddRow");
+        const dictImportBasic = appWindow.document.getElementById("dictImportBasic");
+        const ruleList = appWindow.document.getElementById("ruleList");
+        const autoMask = appWindow.document.getElementById("autoMask");
+        const sampleSelect = appWindow.document.getElementById("sampleSelect");
+        const presetName = appWindow.document.getElementById("presetName");
+        const presetSave = appWindow.document.getElementById("presetSave");
+        const presetSelect = appWindow.document.getElementById("presetSelect");
+        const presetLoad = appWindow.document.getElementById("presetLoad");
+        const dictTableStatus = appWindow.document.getElementById("dictTableStatus");
+        const tabs = Array.from(appWindow.document.querySelectorAll(".tab"));
+
+        expect(Boolean(input && output && maskMode && numberWidth), "主要フォームが存在する");
+
+        const ruleCheckboxes = Array.from(ruleList.querySelectorAll("input[type='checkbox']"));
+        ruleCheckboxes.forEach((checkbox) => {
+          if (!checkbox.checked) {
+            checkbox.checked = true;
+            checkbox.dispatchEvent(new Event("change"));
+          }
+        });
+
+        if (dictRows && dictAddRow) {
+          dictRows.innerHTML = "";
+          dictAddRow.click();
+        }
+
+        input.value = "user@example.com 192.168.0.1";
+        maskMode.value = "pseudonymize";
+        maskMode.dispatchEvent(new Event("change"));
+        appWindow.maskText();
+        expect(
+          output.value.includes("<EMAIL_") && output.value.includes("<IPv4_"),
+          "基本ルールで仮名化される"
+        );
+
+        dictAddRow.click();
+        const lastRow = dictRows.lastElementChild;
+        const rowPrefix = lastRow.querySelector(".dict-prefix");
+        const rowMode = lastRow.querySelector(".dict-mode");
+        const rowPattern = lastRow.querySelector(".dict-pattern");
+        const rowRegex = lastRow.querySelector(".dict-regex");
+
+        rowPrefix.value = "ORG";
+        rowMode.value = "pseudonymize";
+        rowPattern.value = "しらさぎネットワーク";
+        rowRegex.checked = false;
+        rowPrefix.dispatchEvent(new Event("input"));
+        rowMode.dispatchEvent(new Event("change"));
+        rowPattern.dispatchEvent(new Event("input"));
+        rowRegex.dispatchEvent(new Event("change"));
+
+        input.value = "顧客: しらさぎネットワーク";
+        maskMode.value = "redact";
+        appWindow.maskText();
+        expect(output.value.includes("<ORG_"), "辞書行の仮名化が反映される");
+
+        input.value = "顧客: しらさぎネットワーク";
+        autoMask.checked = false;
+        autoMask.dispatchEvent(new Event("change"));
+        await sleep(260);
+        output.value = "prev";
+        input.dispatchEvent(new Event("input"));
+        await sleep(260);
+        expect(output.value === "prev", "自動マスクOFFでは入力だけで出力が変わらない");
+
+        autoMask.checked = true;
+        autoMask.dispatchEvent(new Event("change"));
+        input.value = "user@example.com";
+        maskMode.value = "pseudonymize";
+        maskMode.dispatchEvent(new Event("change"));
+        input.dispatchEvent(new Event("input"));
+        await sleep(260);
+        expect(output.value.includes("<EMAIL_"), "自動マスクONで入力時に反映される");
+
+        dictRows.innerHTML = "";
+        dictAddRow.click();
+        const errRow = dictRows.lastElementChild;
+        errRow.querySelector(".dict-pattern").value = "[";
+        errRow.querySelector(".dict-regex").checked = true;
+        errRow.querySelector(".dict-regex").dispatchEvent(new Event("change"));
+        errRow.querySelector(".dict-pattern").dispatchEvent(new Event("input"));
+        appWindow.maskText();
+        expect(
+          dictTableStatus.textContent.includes("辞書の正規表現が不正です。"),
+          "辞書の正規表現エラーが表示される"
+        );
+
+        dictRows.innerHTML = "";
+        dictAddRow.click();
+        const safeRow = dictRows.lastElementChild;
+        safeRow.querySelector(".dict-prefix").value = "BRKT";
+        safeRow.querySelector(".dict-pattern").value = "[";
+        safeRow.querySelector(".dict-regex").checked = false;
+        safeRow.querySelector(".dict-prefix").dispatchEvent(new Event("input"));
+        safeRow.querySelector(".dict-pattern").dispatchEvent(new Event("input"));
+        input.value = "記号: [";
+        maskMode.value = "pseudonymize";
+        maskMode.dispatchEvent(new Event("change"));
+        appWindow.maskText();
+        expect(output.value.includes("<BRKT_"), "特殊文字を含む辞書エントリが動作する");
+
+        if (sampleSelect) {
+          sampleSelect.value = "support";
+          sampleSelect.dispatchEvent(new Event("change"));
+          await sleep(260);
+          expect(input.value.includes("VPN接続不具合"), "サンプル選択で入力が更新される");
+        }
+
+        if (tabs.length >= 2) {
+          const inputBefore = input.value;
+          tabs.find((tab) => tab.dataset.tab === "settings")?.click();
+          tabs.find((tab) => tab.dataset.tab === "work")?.click();
+          expect(input.value === inputBefore, "タブ切り替えで入力が保持される");
+        }
+
+        if (presetName && presetSave && presetSelect && presetLoad) {
+          presetName.value = "test-save";
+          presetSave.click();
+          maskMode.value = "redact";
+          maskMode.dispatchEvent(new Event("change"));
+          presetSelect.value = "test-save";
+          presetLoad.click();
+          expect(maskMode.value === "pseudonymize", "マイ設定の保存/読み込みが動作する");
+        }
+
+        const bigBlock = "192.168.0.1 user@example.com\n".repeat(2000);
+        input.value = bigBlock;
+        maskMode.value = "pseudonymize";
+        maskMode.dispatchEvent(new Event("change"));
+        const start = performance.now();
+        appWindow.maskText();
+        const duration = Math.round(performance.now() - start);
+        logResult("巨大テキストの処理時間", true, `${duration}ms`);
+
+        let confirmCount = 0;
+        appWindow.confirm = () => {
+          confirmCount += 1;
+          return true;
+        };
+        const beforeCount = dictRows.children.length;
+        dictImportBasic.click();
+        const afterCount = dictRows.children.length;
+        const ruleChecks = Array.from(ruleList.querySelectorAll("input[type='checkbox']"));
+        const allOff = ruleChecks.length > 0 && ruleChecks.every((el) => !el.checked);
+        expect(confirmCount === 1, "転記確認ダイアログが呼ばれる");
+        expect(afterCount > beforeCount, "転記で辞書行が追加される");
+        expect(allOff, "基本設定のルールが全OFFになる");
+      }
+
+      const frame = document.getElementById("appFrame");
+      frame.addEventListener("load", () => {
+        runTests(frame.contentWindow).catch((err) => {
+          logResult("テスト実行", false, err.message);
+        });
+      });
+    </script>
+  </body>
+</html>
