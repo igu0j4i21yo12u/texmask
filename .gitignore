@@ -26,3 +26,6 @@ build/
 
 # Test artifacts
 *.json.test
+
+# Release archives
+*.zip
