@@ -29,3 +29,4 @@ build/
 
 # Release archives
 *.zip
+!texmask-v*.zip
