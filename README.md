@@ -134,6 +134,8 @@ open http://localhost:8000/tests/test.html
 
 MIT License - 詳細は [LICENSE](LICENSE) をご覧ください。
 
+(C) 2025 igu0j4i21yo12u（GitHubリポジトリへのリンク: https://github.com/igu0j4i21yo12u/texmask）
+
 ---
 
 ## クレジット
