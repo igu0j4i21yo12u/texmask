@@ -6,7 +6,7 @@
 
 外部サーバーへのデータ送信は一切行わず、すべての処理がブラウザ内で完結します。機密情報を含むログやメール、設定ファイルなどを安心してマスキングできます。
 
-🔗 **[デモサイト (GitHub Pages)](https://igu0j4i21yo12u.github.io/texmask/)**
+🔗 <a href="https://igu0j4i21yo12u.github.io/texmask/" target="_blank" rel="noopener noreferrer"><strong>デモサイト (GitHub Pages)</strong></a>
 
 ---
 
