@@ -55,7 +55,7 @@ const baseRules = [
     name: "contract_number",
     label: "Contract No.",
     pattern: "\\b[A-Z]{2,4}-\\d{4,}\\b",
-    mode: "redact",
+    mode: "pseudonymize",
     prefix: "CONTRACT",
   },
   {
@@ -125,13 +125,10 @@ const ui = {
   clearBtn: document.getElementById("clearBtn"),
   sampleSelect: document.getElementById("sampleSelect"),
   autoMask: document.getElementById("autoMask"),
-  maskMode: document.getElementById("maskMode"),
   numberWidthRow: document.getElementById("numberWidthRow"),
-  redactMaskRow: document.getElementById("redactMaskRow"),
-  redactMask: document.getElementById("redactMask"),
-  redactCustomRow: document.getElementById("redactCustomRow"),
-  redactCustom: document.getElementById("redactCustom"),
   numberWidth: document.getElementById("numberWidth"),
+  useRandomSessionId: document.getElementById("useRandomSessionId"),
+  regenSessionId: document.getElementById("regenSessionId"),
   dictDefaultPrefix: document.getElementById("dictDefaultPrefix"),
   dictRows: document.getElementById("dictRows"),
   dictAddRow: document.getElementById("dictAddRow"),
@@ -152,7 +149,10 @@ const ui = {
   presetExport: document.getElementById("presetExport"),
   presetImport: document.getElementById("presetImport"),
   presetImportFile: document.getElementById("presetImportFile"),
+  presetStatus: document.getElementById("presetStatus"),
   stats: document.getElementById("stats"),
+  appStats: document.getElementById("appStats"),
+  saveMaskedTextBtn: document.getElementById("saveMaskedTextBtn"),
   tabs: document.querySelectorAll(".tab"),
   tabPanels: document.querySelectorAll(".tab-panel"),
   useAddressDict: document.getElementById("useAddressDict"),
@@ -160,9 +160,20 @@ const ui = {
   addressDictSource: document.getElementById("addressDictSource"),
   addressDictCount: document.getElementById("addressDictCount"),
   addressDictUpdated: document.getElementById("addressDictUpdated"),
-  addressDictPreview: document.getElementById("addressDictPreview"),
+  addressSearchInput: document.getElementById("addressSearchInput"),
+  addressSearchResults: document.getElementById("addressSearchResults"),
   updateAddressDict: document.getElementById("updateAddressDict"),
   resetAddressDict: document.getElementById("resetAddressDict"),
+  downloadDictBtn: document.getElementById("downloadDictBtn"),
+  unmaskInputText: document.getElementById("unmaskInputText"),
+  unmaskOutputText: document.getElementById("unmaskOutputText"),
+  unmaskClearBtn: document.getElementById("unmaskClearBtn"),
+  unmaskCopyBtn: document.getElementById("unmaskCopyBtn"),
+  unmaskTextFile: document.getElementById("unmaskTextFile"),
+  unmaskTextDrop: document.getElementById("unmaskTextDrop"),
+  unmaskDictFile: document.getElementById("unmaskDictFile"),
+  unmaskDictDrop: document.getElementById("unmaskDictDrop"),
+  unmaskStats: document.getElementById("unmaskStats"),
 };
 
 const RULE_EXAMPLES = {
@@ -191,12 +202,19 @@ const state = {
 const STORAGE_KEY = "masking-web-state-v1";
 const PRESET_KEY = "masking-web-presets-v1";
 const ADDRESS_DICT_CUSTOM_KEY = "masking-web-address-dict-custom-v1";
+const HMAC_KEY_STORAGE = "masking-web-hmac-key-v1";
 const MASK_DELAY_MS = 180;
+const COPY_FEEDBACK_DURATION_MS = 1200;
+const SESSION_ID_LENGTH = 4;
+const ADDRESS_SEARCH_LIMIT = 50;
 const DICT_IMPORT_BACKUP_PREFIX = "転記前バックアップ";
 const GEOLONIA_API_URL = "https://geolonia.github.io/japanese-addresses/api/ja.json";
 let maskTimer = null;
 let addressPatterns = null; // 住所パターンのキャッシュ
 let addressPatternRegex = null; // 住所パターン正規表現のキャッシュ
+let currentSessionId = null; // 現在のセッションID
+let currentMaskDictionary = null; // 現在のマスク辞書
+let currentUnmaskDictionary = null; // 復号用辞書
 const SAMPLE_DATA = {
   address: [
     "顧客: さくら情報システム",
@@ -423,7 +441,6 @@ const SAMPLE_DATA = {
   ].join("\n"),
 };
 
-const DEFAULT_REDACT_MASK = "****";
 
 function normalizeRegexPattern(pattern) {
   let flags = "g";
@@ -456,7 +473,10 @@ function buildRuleRegex(rule) {
 }
 
 class PlaceholderMap {
-  constructor() {
+  constructor(sessionId, includeSessionId) {
+    this.dictionaryId = sessionId || generateSessionId();
+    this.includeSessionId = Boolean(includeSessionId);
+    this.sessionId = this.includeSessionId ? this.dictionaryId : "";
     this.maps = {};
     this.counts = {};
   }
@@ -470,9 +490,28 @@ class PlaceholderMap {
       return bucket[raw];
     }
     this.counts[key] += 1;
-    const value = `<${prefix}_${formatCount(this.counts[key], width)}>`;
+    const suffix = `${prefix}:${formatCount(this.counts[key], width)}`;
+    const value = this.includeSessionId
+      ? `{{${this.sessionId}:${suffix}}}`
+      : `{{${suffix}}}`;
     bucket[raw] = value;
     return value;
+  }
+  getDictionary() {
+    const mappings = {};
+    for (const key in this.maps) {
+      const bucket = this.maps[key];
+      for (const original in bucket) {
+        const masked = bucket[original];
+        mappings[masked] = original;
+      }
+    }
+    return {
+      version: "1.0",
+      session_id: "",
+      created_at: new Date().toISOString(),
+      mappings: mappings
+    };
   }
 }
 
@@ -484,20 +523,19 @@ function formatCount(value, width) {
   return raw.padStart(width, "0");
 }
 
+function generateSessionId() {
+  // 短い4文字のランダムIDを生成
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < SESSION_ID_LENGTH; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
 function getNumberWidth() {
   const parsed = Number.parseInt(ui.numberWidth.value, 10);
   return Number.isFinite(parsed) ? parsed : 3;
-}
-
-function getRedactMask() {
-  if (ui.redactMask?.value === "custom") {
-    const raw = ui.redactCustom?.value;
-    const trimmed = raw ? raw.trim() : "";
-    return trimmed || DEFAULT_REDACT_MASK;
-  }
-  const raw = ui.redactMask?.value;
-  const trimmed = raw ? raw.trim() : "";
-  return trimmed || DEFAULT_REDACT_MASK;
 }
 
 function getDictDefaultPrefix() {
@@ -513,7 +551,6 @@ function readDictRows() {
   return Array.from(ui.dictRows.querySelectorAll(".dict-row")).map((row) => ({
     enabled: row.querySelector(".dict-enabled")?.checked ?? true,
     prefix: row.querySelector(".dict-prefix")?.value?.trim() || "",
-    mode: row.querySelector(".dict-mode")?.value || "redact",
     pattern: row.querySelector(".dict-pattern")?.value?.trim() || "",
     regex: row.querySelector(".dict-regex")?.checked ?? false,
   }));
@@ -522,7 +559,7 @@ function readDictRows() {
 function buildDictionaryRules() {
   const entries = readDictRows();
   const rules = [];
-  showDictTableStatus("");
+  updateDictTableStatusDisplay("");
   const defaultPrefix = getDictDefaultPrefix();
   let hasError = false;
 
@@ -533,7 +570,7 @@ function buildDictionaryRules() {
     if (entry.regex) {
       const check = validatePattern(entry.pattern);
       if (!check.valid) {
-        showDictTableStatus(`辞書の正規表現が不正です。(行 ${index + 1})`);
+        updateDictTableStatusDisplay(`辞書の正規表現が不正です。(行 ${index + 1})`);
         hasError = true;
         return;
       }
@@ -543,7 +580,6 @@ function buildDictionaryRules() {
       name: `dictionary_${index}`,
       label: "辞書",
       pattern,
-      mode: entry.mode || "redact",
       isDictionary: true,
       prefix: (entry.prefix || defaultPrefix).toUpperCase(),
     });
@@ -555,16 +591,24 @@ function buildDictionaryRules() {
   return rules;
 }
 
-function showStatus(message, isError = false) {
+function updateStatusDisplay(message, isError = false) {
   ui.stats.textContent = message;
   ui.stats.classList.toggle("error", isError);
 }
 
-function showDictTableStatus(message) {
+function updateDictTableStatusDisplay(message) {
   if (!ui.dictTableStatus) {
     return;
   }
   ui.dictTableStatus.textContent = message || "";
+}
+
+function updatePresetStatusDisplay(message, isError = false) {
+  if (!ui.presetStatus) {
+    return;
+  }
+  ui.presetStatus.textContent = message || "";
+  ui.presetStatus.classList.toggle("error", isError);
 }
 
 function validatePattern(pattern) {
@@ -591,18 +635,6 @@ function createDictRow(entry = {}) {
   prefix.className = "dict-prefix";
   prefix.placeholder = "例: NAME";
   prefix.value = entry.prefix || "";
-
-  const mode = document.createElement("select");
-  mode.className = "dict-mode";
-  const modePseudonymize = document.createElement("option");
-  modePseudonymize.value = "pseudonymize";
-  modePseudonymize.textContent = "仮名化";
-  const modeRedact = document.createElement("option");
-  modeRedact.value = "redact";
-  modeRedact.textContent = "伏せ字";
-  mode.appendChild(modePseudonymize);
-  mode.appendChild(modeRedact);
-  mode.value = entry.mode || "redact";
 
   const pattern = document.createElement("input");
   pattern.type = "text";
@@ -637,13 +669,11 @@ function createDictRow(entry = {}) {
 
   attach(enabled, "change");
   attach(prefix);
-  attach(mode, "change");
   attach(pattern);
   attach(regex, "change");
 
   row.appendChild(enabled);
   row.appendChild(prefix);
-  row.appendChild(mode);
   row.appendChild(pattern);
   row.appendChild(regexLabel);
   row.appendChild(removeBtn);
@@ -655,22 +685,21 @@ function renderDictRows(entries = []) {
     return;
   }
   ui.dictRows.innerHTML = "";
-  const defaultMode = ui.maskMode?.value === "pseudonymize" ? "pseudonymize" : "redact";
+  const fragment = document.createDocumentFragment();
   const rows = entries.length
     ? entries
-    : [{ enabled: true, prefix: "", mode: defaultMode, pattern: "", regex: false }];
+    : [{ enabled: true, prefix: "", pattern: "", regex: false }];
   rows.forEach((entry) => {
-    ui.dictRows.appendChild(createDictRow(entry));
+    fragment.appendChild(createDictRow(entry));
   });
+  ui.dictRows.appendChild(fragment);
 }
 
 function addDictRow(entry = {}) {
   if (!ui.dictRows) {
     return;
   }
-  const fallbackMode = ui.maskMode?.value === "pseudonymize" ? "pseudonymize" : "redact";
-  const normalized = { mode: fallbackMode, ...entry };
-  ui.dictRows.appendChild(createDictRow(normalized));
+  ui.dictRows.appendChild(createDictRow(entry));
   persistState();
   scheduleMask();
 }
@@ -686,7 +715,6 @@ function importBasicRulesToDict() {
   const entries = state.rules.map((rule) => ({
     enabled: rule.enabled,
     prefix: rule.prefix || "",
-    mode: rule.mode || "redact",
     pattern: rule.pattern || "",
     regex: true,
   }));
@@ -696,7 +724,7 @@ function importBasicRulesToDict() {
   renderRules();
   persistState();
   scheduleMask();
-  showStatus("基本設定を辞書へ転記しました。");
+  updateStatusDisplay("基本設定を辞書へ転記しました。");
 }
 
 function saveImportBackupPreset() {
@@ -723,6 +751,11 @@ function formatBackupTimestamp(date) {
   return `${year}${month}${day}-${hours}${minutes}`;
 }
 
+function formatTimestampForFilename(date) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}`;
+}
+
 function applyRule(text, rule, placeholders, counts) {
   if (!rule.pattern) {
     return text;
@@ -732,16 +765,7 @@ function applyRule(text, rule, placeholders, counts) {
   let hits = 0;
   const replaced = text.replace(regex, (match) => {
     hits += 1;
-    let mode = "redact";
-    if (ui.maskMode.value === "pseudonymize") {
-      mode = "pseudonymize";
-    } else if (rule.isDictionary && rule.mode) {
-      mode = rule.mode;
-    }
-    if (mode === "pseudonymize") {
-      return placeholders.get(rule.name, match, rule.prefix, numberWidth);
-    }
-    return getRedactMask();
+    return placeholders.get(rule.name, match, rule.prefix, numberWidth);
   });
   if (hits) {
     counts[rule.name] = (counts[rule.name] || 0) + hits;
@@ -753,10 +777,17 @@ function maskText() {
   const source = ui.inputText.value || "";
   if (!source.trim()) {
     ui.outputText.value = "";
-    showStatus("入力テキストが空です。");
+    updateStatusDisplay("入力テキストが空です。");
+    currentMaskDictionary = null;
     return;
   }
-  const placeholders = new PlaceholderMap();
+
+  // 新しいセッションIDを生成
+  if (!currentSessionId) {
+    currentSessionId = generateSessionId();
+  }
+  const includeSessionId = ui.useRandomSessionId?.checked ?? true;
+  const placeholders = new PlaceholderMap(currentSessionId, includeSessionId);
   const counts = {};
   let result = source;
   try {
@@ -766,9 +797,6 @@ function maskText() {
       return;
     }
     dictRules.forEach((dictRule) => {
-      if (ui.maskMode.value === "pseudonymize") {
-        dictRule.mode = "pseudonymize";
-      }
       result = applyRule(result, dictRule, placeholders, counts);
     });
 
@@ -787,23 +815,49 @@ function maskText() {
     });
     ui.outputText.value = result;
     renderStats(counts);
+
+    // 辞書を保存
+    currentMaskDictionary = placeholders.getDictionary();
   } catch (err) {
-    showStatus("正規表現の形式が不正です。", true);
+    updateStatusDisplay("正規表現の形式が不正です。", true);
   }
 }
 
 function renderStats(counts) {
-  const entries = state.rules
-    .filter((rule) => counts[rule.name])
-    .map((rule) => `${rule.label}: ${counts[rule.name]}`);
-  const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
-  const breakdown = entries.length ? entries.join(" / ") : "なし";
+  const allEntries = [];
 
-  showStatus(`総マスク数: ${total}\n内訳: ${breakdown}`);
+  // 基本ルール
+  state.rules
+    .filter((rule) => counts[rule.name])
+    .forEach((rule) => {
+      allEntries.push(`${rule.label}: ${counts[rule.name]}`);
+    });
+
+  // その他のルール（辞書、住所など）
+  for (const [key, count] of Object.entries(counts)) {
+    // 基本ルールに含まれないものを追加
+    const isBaseRule = state.rules.some(rule => rule.name === key);
+    if (!isBaseRule) {
+      // キー名から適切なラベルを生成
+      let label = key;
+      if (key.startsWith('dictionary_')) {
+        label = '辞書';
+      } else if (key.startsWith('address_')) {
+        label = '住所';
+      }
+      allEntries.push(`${label}: ${count}`);
+    }
+  }
+
+  const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
+  const breakdown = allEntries.length ? allEntries.join(" / ") : "なし";
+
+  updateStatusDisplay(`総マスク数: ${total} （内訳: ${breakdown}）`);
 }
 
 function renderRules() {
   ui.ruleList.innerHTML = "";
+  const fragment = document.createDocumentFragment();
   state.rules.forEach((rule, index) => {
     const wrapper = document.createElement("label");
     wrapper.className = "rule-item";
@@ -835,8 +889,9 @@ function renderRules() {
     if (exampleText) {
       wrapper.appendChild(example);
     }
-    ui.ruleList.appendChild(wrapper);
+    fragment.appendChild(wrapper);
   });
+  ui.ruleList.appendChild(fragment);
 
   initRuleDrag();
 }
@@ -990,19 +1045,19 @@ async function copyOutput() {
     ui.copyBtn.textContent = "コピー済み";
     setTimeout(() => {
       ui.copyBtn.textContent = "コピー";
-    }, 1200);
+    }, COPY_FEEDBACK_DURATION_MS);
   } catch (err) {
     ui.copyBtn.textContent = "失敗";
     setTimeout(() => {
       ui.copyBtn.textContent = "コピー";
-    }, 1200);
+    }, COPY_FEEDBACK_DURATION_MS);
   }
 }
 
 function clearInput() {
   ui.inputText.value = "";
   ui.outputText.value = "";
-  showStatus("");
+  updateStatusDisplay("");
   persistState();
 }
 
@@ -1023,10 +1078,8 @@ function buildStatePayload() {
     inputText: ui.inputText.value,
     sampleSelect: ui.sampleSelect.value,
     autoMask: ui.autoMask.checked,
-    maskMode: ui.maskMode.value,
+    useRandomSessionId: ui.useRandomSessionId?.checked ?? true,
     numberWidth: ui.numberWidth.value,
-    redactMask: ui.redactMask.value,
-    redactCustom: ui.redactCustom.value,
     dictDefaultPrefix: ui.dictDefaultPrefix.value,
     dictRows: readDictRows(),
     rules: state.rules.map((rule) => ({
@@ -1050,17 +1103,11 @@ function applyStatePayload(payload) {
   if (typeof payload.autoMask === "boolean") {
     ui.autoMask.checked = payload.autoMask;
   }
-  if (typeof payload.maskMode === "string") {
-    ui.maskMode.value = payload.maskMode;
+  if (typeof payload.useRandomSessionId === "boolean" && ui.useRandomSessionId) {
+    ui.useRandomSessionId.checked = payload.useRandomSessionId;
   }
   if (typeof payload.numberWidth === "string") {
     ui.numberWidth.value = payload.numberWidth;
-  }
-  if (typeof payload.redactMask === "string") {
-    ui.redactMask.value = payload.redactMask;
-  }
-  if (typeof payload.redactCustom === "string") {
-    ui.redactCustom.value = payload.redactCustom;
   }
   if (typeof payload.dictDefaultPrefix === "string") {
     ui.dictDefaultPrefix.value = payload.dictDefaultPrefix;
@@ -1131,7 +1178,7 @@ function renderPresetOptions() {
 function savePreset() {
   const name = ui.presetName.value.trim();
   if (!name) {
-    showStatus("設定名を入力してください。", true);
+    updatePresetStatusDisplay("設定名を入力してください。", true);
     return;
   }
   const presets = loadPresets();
@@ -1153,12 +1200,13 @@ function savePreset() {
   savePresets(presets);
   renderPresetOptions();
   ui.presetSelect.value = name;
+  updatePresetStatusDisplay("");
 }
 
 function loadPreset() {
   const name = ui.presetSelect.value;
   if (!name) {
-    showStatus("保存した設定を選択してください。", true);
+    updatePresetStatusDisplay("保存した設定を選択してください。", true);
     return;
   }
   const presets = loadPresets();
@@ -1170,12 +1218,13 @@ function loadPreset() {
   renderRules();
   persistState();
   scheduleMask();
+  updatePresetStatusDisplay("");
 }
 
 function deletePreset() {
   const name = ui.presetSelect.value;
   if (!name) {
-    showStatus("削除する設定を選択してください。", true);
+    updatePresetStatusDisplay("削除する設定を選択してください。", true);
     return;
   }
   const ok = window.confirm(`設定「${name}」を削除しますか？`);
@@ -1185,6 +1234,38 @@ function deletePreset() {
   const presets = loadPresets().filter((preset) => preset.name !== name);
   savePresets(presets);
   renderPresetOptions();
+  updatePresetStatusDisplay("");
+}
+
+function updateSessionIdControls() {
+  if (!ui.regenSessionId || !ui.useRandomSessionId) {
+    return;
+  }
+  ui.regenSessionId.disabled = !ui.useRandomSessionId.checked;
+}
+
+function regenerateSessionId() {
+  currentSessionId = generateSessionId();
+  maskText();
+}
+
+function saveMaskedOutput() {
+  const value = ui.outputText.value;
+  if (!value) {
+    updateStatusDisplay("保存するテキストがありません。", true);
+    return;
+  }
+  const timestamp = formatTimestampForFilename(new Date());
+  const blob = new Blob([value], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `masked-text-${timestamp}.txt`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  updateStatusDisplay("マスク後テキストを保存しました。");
 }
 
 function sanitizeFileName(name) {
@@ -1202,7 +1283,7 @@ function resolveExportName() {
 function exportPresetToFile() {
   const name = resolveExportName();
   if (!name) {
-    showStatus("設定名を入力してください。", true);
+    updatePresetStatusDisplay("設定名を入力してください。", true);
     return;
   }
 
@@ -1223,7 +1304,7 @@ function exportPresetToFile() {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
-  showStatus(`設定「${name}」をJSONに保存しました。`);
+  updatePresetStatusDisplay(`設定「${name}」をJSONに保存しました。`);
 }
 
 function parseImportedPayload(raw) {
@@ -1257,15 +1338,15 @@ function importPresetFromFile(file) {
       } else {
         ui.presetName.value = "";
       }
-      showStatus("JSON設定を読み込みました。");
+      updateStatusDisplay("JSON設定を読み込みました。");
     } catch (err) {
-      showStatus("JSONの読み込みに失敗しました。", true);
+      updateStatusDisplay("JSONの読み込みに失敗しました。", true);
     } finally {
       ui.presetImportFile.value = "";
     }
   };
   reader.onerror = () => {
-    showStatus("JSONの読み込みに失敗しました。", true);
+    updateStatusDisplay("JSONの読み込みに失敗しました。", true);
     ui.presetImportFile.value = "";
   };
   reader.readAsText(file, "utf-8");
@@ -1355,7 +1436,7 @@ function renderAddressDictStatus(info) {
     ui.addressDictSource.textContent = 'ローカル同梱';
   }
 
-  renderAddressPreview();
+  renderAddressSearchResults();
 }
 
 function buildAddressPatternRegex(patterns) {
@@ -1376,13 +1457,35 @@ function formatAddressDictVersion(version) {
   return version;
 }
 
-function renderAddressPreview() {
-  if (!addressPatterns || !ui.addressDictPreview) {
+function renderAddressSearchResults(query) {
+  if (!ui.addressSearchResults) {
     return;
   }
-
-  const preview = addressPatterns.slice(0, 20);
-  ui.addressDictPreview.textContent = preview.join('\n') + '\n...';
+  const patterns = addressPatterns
+    || (typeof ADDRESS_PATTERNS !== 'undefined' && Array.isArray(ADDRESS_PATTERNS)
+      ? ADDRESS_PATTERNS
+      : null);
+  if (!patterns) {
+    ui.addressSearchResults.textContent = "辞書を読み込み中...";
+    return;
+  }
+  if (!addressPatterns) {
+    addressPatterns = patterns;
+  }
+  const raw = query ?? ui.addressSearchInput?.value ?? "";
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    ui.addressSearchResults.textContent = "検索結果はここに表示されます。";
+    return;
+  }
+  const results = patterns.filter((pattern) => pattern.includes(trimmed));
+  const limited = results.slice(0, ADDRESS_SEARCH_LIMIT);
+  if (limited.length === 0) {
+    ui.addressSearchResults.textContent = "一致する住所がありません。";
+    return;
+  }
+  const suffix = results.length > ADDRESS_SEARCH_LIMIT ? "\n..." : "";
+  ui.addressSearchResults.textContent = limited.join("\n") + suffix;
 }
 
 async function updateAddressDict() {
@@ -1420,10 +1523,10 @@ async function updateAddressDict() {
       source: 'custom'
     });
 
-    showStatus('住所辞書を最新版に更新しました。');
+    updateStatusDisplay('住所辞書を最新版に更新しました。');
     scheduleMask();
   } catch (err) {
-    showStatus('住所辞書の更新に失敗しました。', true);
+    updateStatusDisplay('住所辞書の更新に失敗しました。', true);
     console.error('Address dict update failed:', err);
   } finally {
     ui.updateAddressDict.disabled = false;
@@ -1452,10 +1555,10 @@ function resetAddressDict() {
   try {
     localStorage.removeItem(ADDRESS_DICT_CUSTOM_KEY);
     loadAddressDict();
-    showStatus('住所辞書を初期版に戻しました。');
+    updateStatusDisplay('住所辞書を初期版に戻しました。');
     scheduleMask();
   } catch (err) {
-    showStatus('住所辞書のリセットに失敗しました。', true);
+    updateStatusDisplay('住所辞書のリセットに失敗しました。', true);
   }
 }
 
@@ -1466,7 +1569,6 @@ function buildAddressRules() {
 
   const rules = [];
 
-  // 都道府県+市区町村+町名・番地パターン（最優先）
   // 例: 東京都千代田区千代田1-1, 大阪府大阪市北区梅田1-1
   if (addressPatternRegex) {
     const prefectureCity = addressPatternRegex;
@@ -1475,7 +1577,7 @@ function buildAddressRules() {
     rules.push({
       name: 'address_full',
       label: '住所（完全）',
-      pattern: `(?:${prefectureCity})[^\\n\\r]*?[0-9０-９一二三四五六七八九十百千万]+(?:丁目|番地?|号|-|−|ー|の|・)+[0-9０-９一二三四五六七八九十百千万]*(?:丁目|番地?|号)?`,
+      pattern: `(?:${prefectureCity})[^\\n\\r]*?[0-9０-９一二三四五六七八九十百千万]+(?:丁目|番地?|号|[-−ー]|の|・)+[0-9０-９一二三四五六七八九十百千万]+(?:丁目|番地?|号)?(?:[-−ー][0-9０-９一二三四五六七八九十百千万]+){0,2}(?:丁目|番地?|号)?`,
       mode: 'pseudonymize',
       prefix: 'ADDRESS'
     });
@@ -1536,15 +1638,19 @@ function init() {
     persistState();
     scheduleMask();
   });
-  ui.redactMask.addEventListener("change", () => {
-    persistState();
-    updateRedactMaskUI();
-    scheduleMask();
-  });
-  ui.redactCustom.addEventListener("input", () => {
-    persistState();
-    scheduleMask();
-  });
+  if (ui.useRandomSessionId) {
+    ui.useRandomSessionId.addEventListener("change", () => {
+      updateSessionIdControls();
+      persistState();
+      scheduleMask();
+    });
+  }
+  if (ui.regenSessionId) {
+    ui.regenSessionId.addEventListener("click", regenerateSessionId);
+  }
+  if (ui.saveMaskedTextBtn) {
+    ui.saveMaskedTextBtn.addEventListener("click", saveMaskedOutput);
+  }
   if (ui.dictAddRow) {
     ui.dictAddRow.addEventListener("click", () => {
       addDictRow({ enabled: true, prefix: "", pattern: "", regex: false });
@@ -1553,11 +1659,6 @@ function init() {
   if (ui.dictImportBasic) {
     ui.dictImportBasic.addEventListener("click", importBasicRulesToDict);
   }
-  ui.maskMode.addEventListener("change", () => {
-    persistState();
-    updateMaskModeUI();
-    scheduleMask();
-  });
   ui.dictDefaultPrefix.addEventListener("input", () => {
     persistState();
     scheduleMask();
@@ -1575,6 +1676,11 @@ function init() {
   if (ui.resetAddressDict) {
     ui.resetAddressDict.addEventListener("click", resetAddressDict);
   }
+  if (ui.addressSearchInput) {
+    ui.addressSearchInput.addEventListener("input", () => {
+      renderAddressSearchResults();
+    });
+  }
 
   if (ui.presetToggle) {
     ui.presetToggle.addEventListener("click", () => {
@@ -1588,9 +1694,14 @@ function init() {
     });
   }
   persistState();
-  updateMaskModeUI();
   scheduleMask();
   initTabs();
+  updateSessionIdControls();
+
+  // マスク解除機能の初期化
+  if (typeof initUnmaskFeatures === 'function') {
+    initUnmaskFeatures();
+  }
 }
 
 function initTextareaSync() {
@@ -1657,21 +1768,14 @@ function initTabs() {
       ui.tabPanels.forEach((panel) => {
         panel.classList.toggle("is-active", panel.dataset.tabPanel === target);
       });
+      if (ui.appStats) {
+        ui.appStats.classList.toggle("is-hidden", target !== "work");
+      }
+      if (target !== "work") {
+        updateStatusDisplay("");
+      }
     });
   });
-}
-
-function updateMaskModeUI() {
-  const showWidth = ui.maskMode.value === "pseudonymize";
-  ui.numberWidthRow.classList.toggle("is-hidden", !showWidth);
-  ui.redactMaskRow.classList.toggle("is-hidden", showWidth);
-  updateRedactMaskUI();
-}
-
-function updateRedactMaskUI() {
-  const isRedact = ui.maskMode.value === "redact";
-  const showCustom = ui.redactMask.value === "custom";
-  ui.redactCustomRow.classList.toggle("is-hidden", !isRedact || !showCustom);
 }
 
 function setPresetPanelOpen(isOpen) {
@@ -1683,4 +1787,9 @@ function setPresetPanelOpen(isOpen) {
   ui.presetPanel.setAttribute("aria-hidden", isOpen ? "false" : "true");
 }
 
-init();
+// DOMContentLoadedで初期化（unmask.jsの読み込み完了を保証）
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}

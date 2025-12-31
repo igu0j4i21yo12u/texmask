@@ -5,24 +5,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>TexMask</title>
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="theme.css" />
+    <script src="brand-config.js" defer></script>
+    <script src="brand.js" defer></script>
     <script src="address-dict.js" defer></script>
     <script src="app.js" defer></script>
+    <script src="unmask.js" defer></script>
   </head>
   <body>
     <div class="page">
       <header class="masthead">
-        <p class="eyebrow">ブラウザで楽々マスキング！</p>
-        <h1>TexMask</h1>
-      <p class="lede">
-        貼り付けたテキストを、ブラウザ内だけでマスキングします。<br />
-        外部へのデータ送信は行っておりませんので、ローカルにダウンロードしたりインターネット接続がなくても動作します。<br />
-        ※住所辞書の「最新版に更新」を実行する場合のみ、インターネット接続が必要です。
-      </p>
+        <p class="eyebrow" id="brandEyebrow">ブラウザで楽々マスキング！</p>
+        <h1 id="brandTitle">TexMask</h1>
+        <p class="lede" id="brandLede">
+          貼り付けたテキストを、ブラウザ内だけでマスキングします。<br />
+          外部へのデータ送信は行っておりませんので、ローカルにダウンロードしたりインターネット接続がなくても動作します。<br />
+          ※住所辞書の「最新版に更新」を実行する場合のみ、インターネット接続が必要です。
+        </p>
+        <div class="brand-links">
+          <a id="demoLink" href="https://igu0j4i21yo12u.github.io/texmask/" target="_blank" rel="noopener">デモサイト</a>
+          <a id="repoLink" href="https://github.com/igu0j4i21yo12u/texmask" target="_blank" rel="noopener">GitHub</a>
+        </div>
       </header>
 
       <div class="tabs" role="tablist" aria-label="表示タブ">
         <button class="tab is-active" type="button" data-tab="work" role="tab" aria-selected="true">
-          入出力
+          マスク
+        </button>
+        <button class="tab" type="button" data-tab="unmask" role="tab" aria-selected="false">
+          マスク解除
         </button>
         <button class="tab" type="button" data-tab="settings" role="tab" aria-selected="false">
           基本設定
@@ -74,38 +85,89 @@
           <textarea id="outputText" readonly wrap="off" placeholder="・ここにマスキングされたテキストが表示されます。"></textarea>
         </section>
 
+        <section class="panel save-panel tab-panel is-active" data-tab-panel="work" role="region">
+          <h2>保存</h2>
+          <div class="save-actions">
+            <button id="saveMaskedTextBtn" class="primary" type="button">💾 マスク後テキストを保存</button>
+            <button id="downloadDictBtn" class="ghost small" type="button">📥 マスク解除用の辞書を保存</button>
+          </div>
+          <p class="dict-help">
+            マスク解除用の辞書を保存しておけば、出力テキストをあとでマスク前の状態に戻せます。<br />
+          </p>
+        </section>
+
         <section class="panel stats-panel output-settings tab-panel is-active" data-tab-panel="work" role="region">
+          <h2>設定</h2>
           <div class="output-settings-row" id="outputSettingsRow">
-            <div>
-              <label for="maskMode">出力モード</label>
-              <select id="maskMode">
-                <option value="pseudonymize" selected>仮名化 (&lt;IPv4_001&gt;)</option>
-                <option value="redact">伏せ字 (****)</option>
-              </select>
+            <div id="numberWidthRow" class="setting-row">
+              <label for="numberWidth">連番桁数の設定</label>
+              <div class="setting-content">
+                <select id="numberWidth">
+                  <option value="2">2桁 (例: &lt;IPv4_01&gt;)</option>
+                  <option value="3" selected>3桁 (例: &lt;IPv4_001&gt;)</option>
+                  <option value="4">4桁 (例: &lt;IPv4_0001&gt;)</option>
+                </select>
+              </div>
             </div>
-            <div id="numberWidthRow">
-              <label for="numberWidth">仮名化の連番桁数</label>
-              <select id="numberWidth">
-                <option value="2">2桁 (例: &lt;IPv4_01&gt;)</option>
-                <option value="3" selected>3桁 (例: &lt;IPv4_001&gt;)</option>
-                <option value="4">4桁 (例: &lt;IPv4_0001&gt;)</option>
-              </select>
-            </div>
-            <div id="redactMaskRow" class="is-hidden">
-              <label for="redactMask">伏せ字文字列</label>
-              <select id="redactMask">
-                <option value="****">****</option>
-                <option value="<masked>">&lt;masked&gt;</option>
-                <option value="***(hidden)***">***(hidden)***</option>
-                <option value="custom">任意文字列</option>
-              </select>
-            </div>
-            <div id="redactCustomRow" class="is-hidden">
-              <label for="redactCustom">任意文字列</label>
-              <input id="redactCustom" type="text" placeholder="例: ***MASKED***" />
+            <div class="setting-row">
+              <span class="setting-title">ランダム文字列追加設定</span>
+              <div class="setting-content">
+                <div class="setting-controls">
+                  <label class="toggle">
+                    <input id="useRandomSessionId" type="checkbox" checked />
+                    する
+                  </label>
+                  <button id="regenSessionId" class="ghost small" type="button">再生成</button>
+                </div>
+              </div>
             </div>
           </div>
-          <div id="stats" class="stats"></div>
+        </section>
+
+        <section class="panel input tab-panel" data-tab-panel="unmask" role="tabpanel">
+          <div class="panel-header">
+            <h2>入力</h2>
+            <div class="actions">
+              <button id="unmaskClearBtn" class="ghost" type="button">クリア</button>
+            </div>
+          </div>
+          <textarea
+            id="unmaskInputText"
+            wrap="off"
+            placeholder="・ここにマスク済みテキストを入力します。&#10;（外部ファイルからテキストファイルを読み込むと内容は置き換えられます）"
+          ></textarea>
+        </section>
+
+        <section class="panel output tab-panel" data-tab-panel="unmask" role="tabpanel">
+          <div class="panel-header">
+            <h2>出力</h2>
+            <div class="actions">
+              <button id="unmaskCopyBtn" class="ghost" type="button">コピー</button>
+            </div>
+          </div>
+          <textarea id="unmaskOutputText" readonly wrap="off" placeholder="・マスク解除用の辞書を選択するとここにマスク解除されたテキストが表示されます。"></textarea>
+        </section>
+
+        <section class="panel unmask-import-panel tab-panel" data-tab-panel="unmask" role="region">
+          <h2>外部ファイル</h2>
+          <div class="import-grid">
+            <div class="import-card">
+              <span class="import-title">マスク済みテキストファイル読み込み</span>
+              <div id="unmaskTextDrop" class="drop-zone" role="button" tabindex="0">
+                ここにドラッグ＆ドロップ
+              </div>
+              <input type="file" id="unmaskTextFile" accept=".txt,text/plain" />
+            </div>
+            <div class="import-card">
+              <span class="import-title">マスク解除用辞書ファイル読み込み</span>
+              <div id="unmaskDictDrop" class="drop-zone" role="button" tabindex="0">
+                ここにドラッグ＆ドロップ
+              </div>
+              <input type="file" id="unmaskDictFile" accept=".json,application/json" />
+            </div>
+          </div>
+          <p class="import-note">※読み込んだデータはブラウザの内部処理でのみ利用し、外部には送信されません。</p>
+          <div id="unmaskStats" class="stats"></div>
         </section>
 
         <aside class="panel settings tab-panel" data-tab-panel="settings" role="tabpanel">
@@ -140,7 +202,6 @@
               <div class="dict-header">
                 <span>有効</span>
                 <span>置換時の接頭子</span>
-                <span>方式</span>
                 <span>対象文字列</span>
                 <span>正規表現</span>
                 <span>削除</span>
@@ -205,13 +266,18 @@
           </div>
 
           <div class="setting-group">
-            <span>プレビュー（一部）</span>
-            <div id="addressDictPreview" class="address-preview">
-              <!-- JavaScriptで動的に生成 -->
+            <span>住所検索</span>
+            <div class="address-search">
+              <input id="addressSearchInput" type="text" placeholder="例: 千代田" />
+              <div id="addressSearchResults" class="address-preview" aria-live="polite"></div>
+              <p class="dict-status">※部分一致で最大50件を表示</p>
             </div>
           </div>
         </aside>
       </main>
+    </div>
+    <div class="app-stats" id="appStats" aria-live="polite">
+      <div id="stats" class="stats"></div>
     </div>
 
     <div id="presetDock" class="floating-preset" aria-label="マイ設定">
@@ -246,9 +312,13 @@
             <button id="presetImport" class="ghost small" type="button">JSONを読み込み</button>
             <input id="presetImportFile" type="file" accept=".json,application/json" hidden />
           </div>
+          <div id="presetStatus" class="preset-status" role="status"></div>
         </div>
       </div>
     </div>
-    <footer class="app-footer">© 2025 <a href="https://github.com/igu0j4i21yo12u" target="_blank" rel="noopener">igu0j4i21yo12u</a>.</footer>
+    <footer class="app-footer">
+      <span id="footerText">© 2025 </span>
+      <a id="footerLink" href="https://github.com/igu0j4i21yo12u/texmask" target="_blank" rel="noopener">TexMask</a>
+    </footer>
   </body>
 </html>
