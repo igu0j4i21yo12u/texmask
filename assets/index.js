@@ -176,7 +176,14 @@ function applyBrandConfig() {
   }
   setLink("demoLink", config.demoUrl, config.demoLabel || "デモサイト");
   setLink("repoLink", config.repoUrl, config.repoLabel || "GitHub");
-  setText("footerText", config.footerText);
+  const footerEl = document.getElementById("footerText");
+  if (footerEl) {
+    const baseText = (footerEl.textContent || "").trim();
+    const extraText = (config.footerText || "").trim();
+    if (extraText) {
+      footerEl.textContent = baseText ? `${baseText} ${extraText}` : extraText;
+    }
+  }
   setLink("footerLink", config.footerLinkUrl, config.footerLinkLabel);
 }
 const STORAGE_KEY = "masking-web-state-v1";
