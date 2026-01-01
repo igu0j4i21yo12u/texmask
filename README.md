@@ -26,7 +26,7 @@
 
 ### 基本的な使い方
 
-1. **[デモサイト](https://igu0j4i21yo12u.github.io/texmask/)** にアクセス
+1. <a href="https://igu0j4i21yo12u.github.io/texmask/" target="_blank" rel="noopener noreferrer"><strong>デモサイト</strong></a> にアクセス
 2. 左側の「入力」欄にテキストを貼り付け
 3. 右側の「出力」欄に自動でマスキング結果が表示されます
 
