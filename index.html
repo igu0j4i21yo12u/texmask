@@ -4,13 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>TexMask</title>
-    <link rel="stylesheet" href="styles.css" />
-    <link rel="stylesheet" href="theme.css" />
-    <script src="brand-config.js" defer></script>
-    <script src="brand.js" defer></script>
-    <script src="address-dict.js" defer></script>
-    <script src="app.js" defer></script>
-    <script src="unmask.js" defer></script>
+    <script src="masking-engine.js" defer></script>
+    <script type="module" crossorigin src="./assets/index-eY-9Bz-5.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-MbNBzFhJ.css">
   </head>
   <body>
     <div class="page">
@@ -32,10 +28,7 @@
         <button class="tab is-active" type="button" data-tab="work" role="tab" aria-selected="true">
           マスク
         </button>
-        <button class="tab" type="button" data-tab="unmask" role="tab" aria-selected="false">
-          マスク解除
-        </button>
-        <button class="tab" type="button" data-tab="settings" role="tab" aria-selected="false">
+<button class="tab" type="button" data-tab="settings" role="tab" aria-selected="false">
           基本設定
         </button>
         <button class="tab" type="button" data-tab="dictionary" role="tab" aria-selected="false">
@@ -49,20 +42,16 @@
       <main class="grid">
         <section class="panel input tab-panel is-active" data-tab-panel="work" role="tabpanel">
           <div class="panel-header">
-            <h2>入力</h2>
+            <h2>マスクなし</h2>
             <div class="actions">
               <label class="inline">
                 <span class="sr-only">サンプル</span>
                 <select id="sampleSelect">
-                  <option value="">サンプルを挿入</option>
-                  <option value="address">住所録</option>
-                  <option value="config">コンフィグ風</option>
-                  <option value="support">問い合わせメモ</option>
+                  <option value="">サンプルを選択</option>
+                  <option value="address">住所例</option>
+                  <option value="config">設定サンプル</option>
+                  <option value="support">サポート例</option>
                 </select>
-              </label>
-              <label class="toggle">
-                <input id="autoMask" type="checkbox" checked />
-                自動マスク
               </label>
               <button id="clearBtn" class="ghost" type="button">クリア</button>
             </div>
@@ -70,52 +59,71 @@
           <textarea
             id="inputText"
             wrap="off"
-            placeholder="・ここに入力したテキストをマスキングします。&#10;・マスキングの細かな調整は、「基本設定」「任意辞書」タブで行えます。"
+            placeholder="・ここにマスクなしのテキストを入力します。&#10;・ルールや辞書は[設定]、[任意辞書]、[住所辞書]で調整できます。"
           ></textarea>
+          <div class="panel-actions">
+            <div class="panel-action-row">
+              <span class="panel-action-label">テキスト</span>
+              <button id="savePlainTextBtn" class="primary small" type="button">ダウンロード</button>
+              <button id="plainTextUploadBtn" class="ghost small" type="button">アップロード</button>
+            </div>
+            <input id="plainTextFile" type="file" accept=".txt,text/plain" hidden />
+          </div>
+        </section>
+
+        <section class="panel transfer-panel tab-panel is-active" data-tab-panel="work" role="region">
+          <h2>変換</h2>
+          <div class="transfer-actions">
+            <button id="maskForwardBtn" class="primary" type="button">マスク &gt;&gt;</button>
+            <button id="unmaskBackwardBtn" class="ghost" type="button">&lt;&lt; マスク解除</button>
+          </div>
         </section>
 
         <section class="panel output tab-panel is-active" data-tab-panel="work" role="tabpanel">
           <div class="panel-header">
-            <h2>出力</h2>
+            <h2>マスクあり</h2>
             <div class="actions">
-              <button id="maskBtn" class="primary" type="button">マスク実行</button>
               <button id="copyBtn" class="ghost" type="button">コピー</button>
             </div>
           </div>
-          <textarea id="outputText" readonly wrap="off" placeholder="・ここにマスキングされたテキストが表示されます。"></textarea>
-        </section>
-
-        <section class="panel save-panel tab-panel is-active" data-tab-panel="work" role="region">
-          <h2>保存</h2>
-          <div class="save-actions">
-            <button id="saveMaskedTextBtn" class="primary" type="button">💾 マスク後テキストを保存</button>
-            <button id="downloadDictBtn" class="ghost small" type="button">📥 マスク解除用の辞書を保存</button>
+          <textarea id="outputText" wrap="off" placeholder="・ここにマスク済みのテキストが表示されます。"></textarea>
+          <div class="panel-actions">
+            <div class="panel-action-row">
+              <span class="panel-action-label">テキスト</span>
+              <button id="saveMaskedTextBtn" class="primary small" type="button">ダウンロード</button>
+              <button id="maskedTextUploadBtn" class="ghost small" type="button">アップロード</button>
+            </div>
+            <div class="panel-action-row">
+              <span class="panel-action-label">マスク解除辞書</span>
+              <button id="downloadDictBtn" class="primary small" type="button">ダウンロード</button>
+              <button id="unmaskDictUploadBtn" class="ghost small" type="button">アップロード</button>
+              <span id="unmaskDictStatus" class="panel-action-note">key: (なし)</span>
+            </div>
+            <input id="unmaskTextFile" type="file" accept=".txt,text/plain" hidden />
+            <input id="unmaskDictFile" type="file" accept=".json,application/json" hidden />
           </div>
-          <p class="dict-help">
-            マスク解除用の辞書を保存しておけば、出力テキストをあとでマスク前の状態に戻せます。<br />
-          </p>
         </section>
 
         <section class="panel stats-panel output-settings tab-panel is-active" data-tab-panel="work" role="region">
           <h2>設定</h2>
           <div class="output-settings-row" id="outputSettingsRow">
             <div id="numberWidthRow" class="setting-row">
-              <label for="numberWidth">連番桁数の設定</label>
+              <label for="numberWidth">番号桁数の設定</label>
               <div class="setting-content">
                 <select id="numberWidth">
-                  <option value="2">2桁 (例: &lt;IPv4_01&gt;)</option>
-                  <option value="3" selected>3桁 (例: &lt;IPv4_001&gt;)</option>
-                  <option value="4">4桁 (例: &lt;IPv4_0001&gt;)</option>
+                  <option value="2">2桁 (例 &lt;IPv4_01&gt;)</option>
+                  <option value="3" selected>3桁 (例 &lt;IPv4_001&gt;)</option>
+                  <option value="4">4桁 (例 &lt;IPv4_0001&gt;)</option>
                 </select>
               </div>
             </div>
             <div class="setting-row">
-              <span class="setting-title">ランダム文字列追加設定</span>
+              <span class="setting-title">ランダムセッションID設定</span>
               <div class="setting-content">
                 <div class="setting-controls">
                   <label class="toggle">
                     <input id="useRandomSessionId" type="checkbox" checked />
-                    する
+                    使う
                   </label>
                   <button id="regenSessionId" class="ghost small" type="button">再生成</button>
                 </div>
@@ -124,53 +132,7 @@
           </div>
         </section>
 
-        <section class="panel input tab-panel" data-tab-panel="unmask" role="tabpanel">
-          <div class="panel-header">
-            <h2>入力</h2>
-            <div class="actions">
-              <button id="unmaskClearBtn" class="ghost" type="button">クリア</button>
-            </div>
-          </div>
-          <textarea
-            id="unmaskInputText"
-            wrap="off"
-            placeholder="・ここにマスク済みテキストを入力します。&#10;（外部ファイルからテキストファイルを読み込むと内容は置き換えられます）"
-          ></textarea>
-        </section>
-
-        <section class="panel output tab-panel" data-tab-panel="unmask" role="tabpanel">
-          <div class="panel-header">
-            <h2>出力</h2>
-            <div class="actions">
-              <button id="unmaskCopyBtn" class="ghost" type="button">コピー</button>
-            </div>
-          </div>
-          <textarea id="unmaskOutputText" readonly wrap="off" placeholder="・マスク解除用の辞書を選択するとここにマスク解除されたテキストが表示されます。"></textarea>
-        </section>
-
-        <section class="panel unmask-import-panel tab-panel" data-tab-panel="unmask" role="region">
-          <h2>外部ファイル</h2>
-          <div class="import-grid">
-            <div class="import-card">
-              <span class="import-title">マスク済みテキストファイル読み込み</span>
-              <div id="unmaskTextDrop" class="drop-zone" role="button" tabindex="0">
-                ここにドラッグ＆ドロップ
-              </div>
-              <input type="file" id="unmaskTextFile" accept=".txt,text/plain" />
-            </div>
-            <div class="import-card">
-              <span class="import-title">マスク解除用辞書ファイル読み込み</span>
-              <div id="unmaskDictDrop" class="drop-zone" role="button" tabindex="0">
-                ここにドラッグ＆ドロップ
-              </div>
-              <input type="file" id="unmaskDictFile" accept=".json,application/json" />
-            </div>
-          </div>
-          <p class="import-note">※読み込んだデータはブラウザの内部処理でのみ利用し、外部には送信されません。</p>
-          <div id="unmaskStats" class="stats"></div>
-        </section>
-
-        <aside class="panel settings tab-panel" data-tab-panel="settings" role="tabpanel">
+<aside class="panel settings tab-panel" data-tab-panel="settings" role="tabpanel">
           <h2>基本設定</h2>
           <p class="lede">
             代表的な文字列について、マスキングするかどうかを選択できます。<br />
@@ -255,6 +217,10 @@
                 <span class="info-label">最終更新:</span>
                 <span id="addressDictUpdated">-</span>
               </div>
+              <div class="info-row">
+                <span class="info-label">町丁目辞書:</span>
+                <span id="addressTownDictStatus">読み込み中...</span>
+              </div>
             </div>
 
             <div class="inline">
@@ -263,6 +229,15 @@
             </div>
 
             <p class="dict-status">※ 更新にはインターネット接続が必要です。更新データはブラウザに保存されます。</p>
+          </div>
+          <div class="setting-group">
+            <span>都道府県フィルタ</span>
+            <div class="inline address-pref-controls">
+              <button id="addressPrefAll" class="ghost small" type="button">全部ON</button>
+              <button id="addressPrefNone" class="ghost small" type="button">全部OFF</button>
+            </div>
+            <div id="addressPrefectureList" class="address-prefecture-list"></div>
+            <p class="dict-status">※初期状態はすべてONです。</p>
           </div>
 
           <div class="setting-group">
