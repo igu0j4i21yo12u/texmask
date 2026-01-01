@@ -130,9 +130,9 @@ const brandConfig = {
   demoLabel: "デモサイト",
   repoUrl: "https://github.com/igu0j4i21yo12u/texmask",
   repoLabel: "GitHub",
-  footerText: "@igu0j4i21yo12u",
+  footerText: "Copyrights 2026 igu0j4i21yo12u",
   footerLinkUrl: "https://x.com/igu0j4i21yo12u",
-  footerLinkLabel: "@igu0j4i21yo12u"
+  footerLinkLabel: "(X Account)"
 };
 function getBrandConfig() {
   return brandConfig || {};
@@ -180,7 +180,8 @@ function applyBrandConfig() {
   if (footerEl) {
     const baseText = (footerEl.textContent || "").trim();
     const extraText = (config.footerText || "").trim();
-    if (extraText) {
+    const linkLabel = (config.footerLinkLabel || "").trim();
+    if (extraText && extraText !== linkLabel) {
       footerEl.textContent = baseText ? `${baseText} ${extraText}` : extraText;
     }
   }
