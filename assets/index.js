@@ -127,9 +127,11 @@ const brandConfig = {
     "外部へのデータ送信は行っておりませんので、ローカルにダウンロードすればインターネット接続がなくても動作します。"
   ],
   demoUrl: "https://igu0j4i21yo12u.github.io/texmask/",
-  demoLabel: "デモサイト",
+  demoLabel: "デモサイト（ブラウザで試す）",
   repoUrl: "https://github.com/igu0j4i21yo12u/texmask",
-  repoLabel: "GitHub",
+  repoLabel: "GitHubから取得",
+  zipUrl: "https://github.com/igu0j4i21yo12u/texmask/releases/latest/download/TexMask-latest.zip",
+  zipLabel: "ZIPでダウンロード",
   footerText: "Copyrights 2026 igu0j4i21yo12u",
   footerLinkUrl: "https://x.com/igu0j4i21yo12u",
   footerLinkLabel: "(X Account)"
@@ -175,7 +177,8 @@ function applyBrandConfig() {
     lede.textContent = config.ledeLines.join("\n");
   }
   setLink("demoLink", config.demoUrl, config.demoLabel || "デモサイト");
-  setLink("repoLink", config.repoUrl, config.repoLabel || "GitHub");
+  setLink("repoLink", config.repoUrl, config.repoLabel || "GitHubから取得");
+  setLink("zipLink", config.zipUrl, config.zipLabel || "ZIPでダウンロード");
   const footerEl = document.getElementById("footerText");
   if (footerEl) {
     const baseText = (footerEl.textContent || "").trim();
@@ -553,15 +556,119 @@ async function copyOutput() {
     }, COPY_FEEDBACK_DURATION_MS);
   }
 }
+function normalizeRegexPattern(pattern) {
+  let flags = "g";
+  let value = pattern;
+  let consumed = true;
+  while (consumed) {
+    consumed = false;
+    const match = value.match(/^\(\?([a-zA-Z]+)\)/);
+    if (match) {
+      consumed = true;
+      value = value.slice(match[0].length);
+      const raw = match[1];
+      if (raw.includes("i")) flags += "i";
+      if (raw.includes("m")) flags += "m";
+      if (raw.includes("s")) flags += "s";
+      if (raw.includes("u")) flags += "u";
+      if (raw.includes("y")) flags += "y";
+    }
+  }
+  return { value, flags };
+}
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function buildRuleRegex(rule) {
+  const normalized = normalizeRegexPattern(rule.pattern);
+  return new RegExp(normalized.value, normalized.flags);
+}
+function formatCount(value, width) {
+  const raw = String(value);
+  if (!width || width <= raw.length) {
+    return raw;
+  }
+  return raw.padStart(width, "0");
+}
+class PlaceholderMap {
+  constructor(sessionId, includeSessionId) {
+    this.dictionaryId = sessionId;
+    this.includeSessionId = Boolean(includeSessionId);
+    this.sessionId = this.includeSessionId ? this.dictionaryId : "";
+    this.maps = {};
+    this.counts = {};
+  }
+  get(key, raw, prefix, width) {
+    if (!this.maps[key]) {
+      this.maps[key] = {};
+      this.counts[key] = 0;
+    }
+    const bucket = this.maps[key];
+    if (bucket[raw]) {
+      return bucket[raw];
+    }
+    this.counts[key] += 1;
+    const suffix = `${prefix}:${formatCount(this.counts[key], width)}`;
+    const value = this.includeSessionId ? `{{${this.sessionId}:${suffix}}}` : `{{${suffix}}}`;
+    bucket[raw] = value;
+    return value;
+  }
+  getDictionary() {
+    const mappings = {};
+    for (const key in this.maps) {
+      const bucket = this.maps[key];
+      for (const original in bucket) {
+        const masked = bucket[original];
+        mappings[masked] = original;
+      }
+    }
+    return {
+      version: "1.0",
+      session_id: this.includeSessionId ? this.sessionId : "",
+      created_at: (/* @__PURE__ */ new Date()).toISOString(),
+      mappings
+    };
+  }
+}
+function buildDictionarySignaturePayload(dictionary) {
+  if (!dictionary || typeof dictionary !== "object") {
+    return null;
+  }
+  const mappings = dictionary.mappings && typeof dictionary.mappings === "object" ? dictionary.mappings : {};
+  const sortedKeys = Object.keys(mappings).sort();
+  const sortedMappings = {};
+  for (const key of sortedKeys) {
+    sortedMappings[key] = mappings[key];
+  }
+  const payload = {
+    version: dictionary.version || "1.0",
+    session_id: dictionary.session_id || "",
+    created_at: dictionary.created_at || "",
+    mappings: sortedMappings
+  };
+  return JSON.stringify(payload);
+}
+async function computeDictionarySignature(dictionary) {
+  const payload = buildDictionarySignaturePayload(dictionary);
+  if (!payload) {
+    return null;
+  }
+  if (!window.crypto || !window.crypto.subtle || typeof window.TextEncoder === "undefined") {
+    return null;
+  }
+  const bytes = new TextEncoder().encode(payload);
+  const hash = await window.crypto.subtle.digest("SHA-256", bytes);
+  const hex = Array.from(new Uint8Array(hash)).map((value) => value.toString(16).padStart(2, "0")).join("");
+  return `sha256:${hex}`;
+}
 async function downloadDictionary() {
-  var _a;
   if (!currentMaskDictionary) {
     updateStatusDisplay("マスク実行後に辞書をダウンロードできます。", true);
     return;
   }
   try {
-    if (!currentMaskDictionary.signature && ((_a = window.MaskingEngine) == null ? void 0 : _a.computeDictionarySignature)) {
-      const signature = await window.MaskingEngine.computeDictionarySignature(
+    if (!currentMaskDictionary.signature) {
+      const signature = await computeDictionarySignature(
         currentMaskDictionary
       );
       if (signature) {
@@ -615,7 +722,7 @@ function unmaskText(dictionary) {
   let output = input;
   const stats = [];
   for (const [mask, original] of Object.entries(dictionary.mappings)) {
-    const escapedMask = window.MaskingEngine.escapeRegExp(mask);
+    const escapedMask = escapeRegExp(mask);
     const regex = new RegExp(escapedMask, "g");
     const matches = output.match(regex);
     if (matches) {
@@ -680,22 +787,15 @@ async function loadDictionaryFile(file) {
   }
   const reader = new FileReader();
   reader.onload = async () => {
-    var _a;
     try {
       const data = JSON.parse(reader.result);
       if (!data.mappings || typeof data.mappings !== "object") {
         throw new Error("辞書フォーマットが不正です");
       }
       if (data.signature) {
-        if ((_a = window.MaskingEngine) == null ? void 0 : _a.computeDictionarySignature) {
-          const computed = await window.MaskingEngine.computeDictionarySignature(
-            data
-          );
-          if (!computed || computed !== data.signature) {
-            throw new Error("辞書の署名が一致しません");
-          }
-        } else {
-          updateUnmaskStatusDisplay("署名の検証に対応していません。", true);
+        const computed = await computeDictionarySignature(data);
+        if (!computed || computed !== data.signature) {
+          throw new Error("辞書の署名が一致しません");
         }
       }
       setCurrentUnmaskDictionary(data);
@@ -1329,11 +1429,6 @@ function updateSessionIdControls() {
   }
   ui.regenSessionId.disabled = !ui.useRandomSessionId.checked;
 }
-const MaskingEngine$2 = window.MaskingEngine;
-if (!MaskingEngine$2) {
-  throw new Error("masking-engine.js is not loaded.");
-}
-const { normalizeRegexPattern, escapeRegExp: escapeRegExp$1 } = MaskingEngine$2;
 function readDictRows() {
   if (!ui.dictRows) {
     return [];
@@ -1381,7 +1476,7 @@ function buildDictionaryRules() {
         return;
       }
     }
-    const pattern = entry.regex ? entry.pattern : escapeRegExp$1(entry.pattern);
+    const pattern = entry.regex ? entry.pattern : escapeRegExp(entry.pattern);
     rules.push({
       name: `dictionary_${index}`,
       label: "辞書",
@@ -1564,11 +1659,6 @@ async function fetchJsonWithIdleTimeout(url, idleTimeoutMs) {
   const text = new TextDecoder("utf-8").decode(buffer);
   return JSON.parse(text);
 }
-const MaskingEngine$1 = window.MaskingEngine;
-if (!MaskingEngine$1) {
-  throw new Error("masking-engine.js is not loaded.");
-}
-const { escapeRegExp } = MaskingEngine$1;
 function getPrefectureList() {
   return Array.isArray(addressTownPrefectures) && addressTownPrefectures.length ? addressTownPrefectures : ADDRESS_PREFECTURES;
 }
@@ -2118,11 +2208,6 @@ function resolveExportName() {
   return name;
 }
 const ADDRESS_BLOCK_PATTERN = "(?:[0-9０-９一二三四五六七八九十百千〇零]{1,3}丁目s*[0-9０-９一二三四五六七八九十百千〇零]{1,3}番s*[0-9０-９一二三四五六七八九十百千〇零]{1,3}号?|[0-9０-９一二三四五六七八九十百千〇零]{1,3}丁目s*[0-9０-９一二三四五六七八九十百千〇零]{1,3}(?:番|号)|[0-9０-９一二三四五六七八九十百千〇零]{1,3}丁目|[東西南北]?[0-9０-９一二三四五六七八九十百千〇零]{1,3}条[東西南北]?[0-9０-９一二三四五六七八九十百千〇零]{1,3}丁目?|[0-9０-９一二三四五六七八九十百千〇零]{1,3}(?:[-‐ー－]|の)[0-9０-９一二三四五六七八九十百千〇零]{1,3}(?:(?:[-‐ー－]|の)[0-9０-９一二三四五六七八九十百千〇零]{1,3})?)(?![0-9０-９])";
-const MaskingEngine = window.MaskingEngine;
-if (!MaskingEngine) {
-  throw new Error("masking-engine.js is not loaded.");
-}
-const { buildRuleRegex, PlaceholderMap, computeDictionarySignature } = MaskingEngine;
 function applyRule(text, rule, placeholders, counts) {
   if (!rule.pattern) {
     return text;
@@ -2456,15 +2541,6 @@ function setPresetPanelOpen(isOpen) {
 }
 function init() {
   applyBrandConfig();
-  Object.defineProperty(window, "currentMaskDictionary", {
-    get: () => currentMaskDictionary,
-    set: (value) => setCurrentMaskDictionary(value)
-  });
-  Object.defineProperty(window, "currentUnmaskDictionary", {
-    get: () => currentUnmaskDictionary,
-    set: (value) => setCurrentUnmaskDictionary(value)
-  });
-  window.updateUnmaskDictStatus = updateUnmaskDictStatus;
   state.rules = baseRules.map((rule) => ({ ...rule, enabled: true }));
   const { dictRowsData, needsRulesRender } = restoreState(baseRules);
   if (ui.dictRows && ui.dictRows.children.length === 0) {
