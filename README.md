@@ -59,10 +59,14 @@
 git clone https://github.com/igu0j4i21yo12u/texmask.git
 cd texmask
 
-# ブラウザで開く
-open index.html
-# または
-python -m http.server 8000
+# ※解凍したフォルダで python を実行できる必要があります。
+#
+# [Windows]
+# python -m http.server 8000
+#
+# [Mac/Linux]
+# python3 -m http.server 8000
+#
 # http://localhost:8000/ にアクセス
 ```
 
@@ -140,8 +144,10 @@ A. はい。すべての処理がブラウザ内で完結します。ネット�
 ### Q. オフラインでも使えますか？
 A. はい。以下の方法で完全オフライン利用が可能です。
 
-- **リポジトリをクローン**: `git clone https://github.com/igu0j4i21yo12u/texmask.git` してローカルで `index.html` を開く
+- **リポジトリをクローン**: `git clone https://github.com/igu0j4i21yo12u/texmask.git` してローカルサーバーで起動
 - **ZIPダウンロード**: [Releases](https://github.com/igu0j4i21yo12u/texmask/releases) から最新版をダウンロードして展開
+  - 解凍/クローン後は `python -m http.server 8000`（Windows）または `python3 -m http.server 8000`（Mac/Linux）で起動
+  - `http://localhost:8000/` にアクセス
 
 GitHub Pages経由の場合、一度読み込めばブラウザキャッシュが有効な間は動作しますが、再アクセス時は接続が必要です。
 
