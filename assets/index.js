@@ -182,7 +182,9 @@ function applyBrandConfig() {
     const extraText = (config.footerText || "").trim();
     const linkLabel = (config.footerLinkLabel || "").trim();
     if (extraText && extraText !== linkLabel) {
-      footerEl.textContent = baseText ? `${baseText} ${extraText}` : extraText;
+      const lowerExtra = extraText.toLowerCase();
+      const replaceBase = lowerExtra.startsWith("copyright") || extraText.includes("©");
+      footerEl.textContent = replaceBase || !baseText ? extraText : `${baseText} ${extraText}`;
     }
   }
   setLink("footerLink", config.footerLinkUrl, config.footerLinkLabel);
