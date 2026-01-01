@@ -33,6 +33,7 @@
 ### マスキング方式
 
 - **仮名化（Pseudonymize）**: `{{IPv4:001}}` のように連番付きラベルで置換（任意でランダム文字列付与）
+- **マスク解除**: マスク済みテキストを元の情報に戻す機能
 
 ### カスタマイズ
 
@@ -51,7 +52,7 @@
 ## ローカルで動かす
 
 ```bash
-# リポジトリをクローン
+# リポジトリをクローン（公開用ビルド成果物）
 git clone https://github.com/igu0j4i21yo12u/texmask.git
 cd texmask
 
@@ -61,6 +62,11 @@ open index.html
 python -m http.server 8000
 # http://localhost:8000/ にアクセス
 ```
+
+## このリポジトリについて
+
+このリポジトリは **GitHub Pages公開用の静的ビルド成果物のみ** を含みます。
+開発用ソースコードは別リポジトリで管理しています。
 
 ---
 
@@ -94,38 +100,6 @@ python -m http.server 8000
 - ⚠️ **住所辞書の更新**: 「最新版に更新」ボタン使用時のみ、GitHub から辞書データを取得します
 
 **注**: アプリ内のサンプルデータ（会社名・個人名など）はすべて架空のものです。
-
----
-
-## 開発・テスト
-
-### テストの実行
-
-```bash
-# ローカルサーバーを起動
-python -m http.server 8000
-
-# テストページを開く
-open http://localhost:8000/tests/test.html
-```
-
-### ファイル構成
-
-```
-.
-├── index.html          # メインHTML
-├── app.js              # マスキングロジック
-├── styles.css          # スタイル定義
-├── address-dict.js     # 住所辞書データ
-├── README.md           # このファイル
-├── LICENSE             # MITライセンス
-├── tests/              # テスト関連
-│   ├── test.html       # テストページ
-│   ├── test-*.js       # 個別テストスクリプト
-│   └── TEST_REPORT.md  # テストレポート
-└── scripts/            # ビルド/開発スクリプト
-    └── build-address-dict.js  # 住所辞書ビルドスクリプト
-```
 
 ---
 
