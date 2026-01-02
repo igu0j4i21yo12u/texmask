@@ -2244,8 +2244,8 @@ function collectActivePrefixes(dictRules, addressRules, textDictRules) {
   }
   return prefixes;
 }
-function isActivePlaceholderAt(text, index, activePrefixes) {
-  if (!activePrefixes || activePrefixes.size === 0) {
+function isActivePlaceholderAt(text, index, activePrefixes, sessionId) {
+  if (!activePrefixes || activePrefixes.size === 0 || !sessionId) {
     return false;
   }
   const lastOpen = text.lastIndexOf("{{", index);
@@ -2261,11 +2261,15 @@ function isActivePlaceholderAt(text, index, activePrefixes) {
     return false;
   }
   const content = text.slice(lastOpen + 2, nextClose);
-  const match = content.match(/^(?:[a-z0-9]+:)?([A-Z0-9_]+):\d+$/i);
+  const match = content.match(/^([a-z0-9]+):([A-Z0-9_]+):\d+$/i);
   if (!match) {
     return false;
   }
-  const label = match[1].toUpperCase();
+  const placeholderSession = match[1];
+  if (placeholderSession !== sessionId) {
+    return false;
+  }
+  const label = match[2].toUpperCase();
   return activePrefixes.has(label);
 }
 function mergeRulesWithPriority(baseRules2, textDictRules) {
@@ -2311,7 +2315,7 @@ function mergeRulesWithPriority(baseRules2, textDictRules) {
   result.push(...priority5);
   return result;
 }
-function applyRule(text, rule, placeholders, counts, activePrefixes = null) {
+function applyRule(text, rule, placeholders, counts, activePrefixes = null, sessionId = null) {
   if (!rule.pattern) {
     return text;
   }
@@ -2320,7 +2324,7 @@ function applyRule(text, rule, placeholders, counts, activePrefixes = null) {
   let hits = 0;
   const placeholderKey = rule.isTextDictionary && rule.groupKey ? rule.groupKey : rule.name;
   const replaced = text.replace(regex, (match, offset, source) => {
-    if (isActivePlaceholderAt(source, offset, activePrefixes)) {
+    if (isActivePlaceholderAt(source, offset, activePrefixes, sessionId)) {
       return match;
     }
     hits += 1;
@@ -2444,10 +2448,10 @@ function maskTextSync(source, buildDictionaryRules2, buildAddressRules2, buildTe
     const addressRules = buildAddressRules2();
     const activePrefixes = collectActivePrefixes(dictRules, addressRules, textDictRules);
     dictRules.forEach((dictRule) => {
-      result = applyRule(result, dictRule, placeholders, counts, activePrefixes);
+      result = applyRule(result, dictRule, placeholders, counts, activePrefixes, currentSessionId);
     });
     addressRules.forEach((addressRule) => {
-      result = applyRule(result, addressRule, placeholders, counts, activePrefixes);
+      result = applyRule(result, addressRule, placeholders, counts, activePrefixes, currentSessionId);
     });
     result = applyAddressBlockRules(result, placeholders, counts);
     const mergedRules = mergeRulesWithPriority(state.rules, textDictRules);
@@ -2455,7 +2459,7 @@ function maskTextSync(source, buildDictionaryRules2, buildAddressRules2, buildTe
       if (!rule.enabled) {
         return;
       }
-      result = applyRule(result, rule, placeholders, counts, activePrefixes);
+      result = applyRule(result, rule, placeholders, counts, activePrefixes, currentSessionId);
     });
     ui.outputText.value = result;
     renderStats(counts);
@@ -2493,14 +2497,14 @@ async function maskTextAsync(source, runId, buildDictionaryRules2, buildAddressR
     const addressRules = buildAddressRules2();
     const activePrefixes = collectActivePrefixes(dictRules, addressRules, textDictRules);
     for (const dictRule of dictRules) {
-      result = applyRule(result, dictRule, placeholders, counts, activePrefixes);
+      result = applyRule(result, dictRule, placeholders, counts, activePrefixes, currentSessionId);
       if (shouldYield) {
         await yieldToBrowser();
         if (!isLatest()) return;
       }
     }
     for (const addressRule of addressRules) {
-      result = applyRule(result, addressRule, placeholders, counts, activePrefixes);
+      result = applyRule(result, addressRule, placeholders, counts, activePrefixes, currentSessionId);
       if (shouldYield) {
         await yieldToBrowser();
         if (!isLatest()) return;
@@ -2512,7 +2516,7 @@ async function maskTextAsync(source, runId, buildDictionaryRules2, buildAddressR
       if (!rule.enabled) {
         continue;
       }
-      result = applyRule(result, rule, placeholders, counts, activePrefixes);
+      result = applyRule(result, rule, placeholders, counts, activePrefixes, currentSessionId);
       if (shouldYield) {
         await yieldToBrowser();
         if (!isLatest()) return;
