@@ -49,8 +49,6 @@ const ui = {
   copyBtn: document.getElementById("copyBtn"),
   clearBtn: document.getElementById("clearBtn"),
   sampleSelect: document.getElementById("sampleSelect"),
-  numberWidthRow: document.getElementById("numberWidthRow"),
-  numberWidth: document.getElementById("numberWidth"),
   useRandomSessionId: document.getElementById("useRandomSessionId"),
   regenSessionId: document.getElementById("regenSessionId"),
   dictDefaultPrefix: document.getElementById("dictDefaultPrefix"),
@@ -97,7 +95,24 @@ const ui = {
   unmaskTextDrop: document.getElementById("unmaskTextDrop"),
   unmaskDictFile: document.getElementById("unmaskDictFile"),
   unmaskDictDrop: document.getElementById("unmaskDictDrop"),
-  unmaskStats: document.getElementById("unmaskStats")
+  unmaskStats: document.getElementById("unmaskStats"),
+  // Text Dictionary
+  textDictAddBtn: document.getElementById("textDictAddBtn"),
+  textDictForm: document.getElementById("textDictForm"),
+  textDictFormTitle: document.getElementById("textDictFormTitle"),
+  textDictLabel: document.getElementById("textDictLabel"),
+  textDictPriority: document.getElementById("textDictPriority"),
+  textDictContent: document.getElementById("textDictContent"),
+  textDictFileInput: document.getElementById("textDictFileInput"),
+  textDictFileFormatRow: document.getElementById("textDictFileFormatRow"),
+  textDictFileRow: document.getElementById("textDictFileRow"),
+  textDictTextareaRow: document.getElementById("textDictTextareaRow"),
+  textDictInputModeRadios: document.getElementsByName("textDictInputMode"),
+  textDictFileFormatRadios: document.getElementsByName("textDictFileFormat"),
+  textDictCancelBtn: document.getElementById("textDictCancelBtn"),
+  textDictSubmitBtn: document.getElementById("textDictSubmitBtn"),
+  textDictList: document.getElementById("textDictList"),
+  textDictListEmpty: document.getElementById("textDictListEmpty")
 };
 function updateStatusDisplay(message, isError = false) {
   ui.stats.textContent = message;
@@ -117,24 +132,23 @@ function updatePresetStatusDisplay(message, isError = false) {
   ui.presetStatus.classList.toggle("error", isError);
 }
 const brandConfig = {
-  productName: "TexMask",
-  pageTitle: "TexMask - ブラウザで楽々マスキング！",
-  logoText: "TexMask",
-  eyebrow: "ブラウザで楽々マスキング！",
+  productName: "TextMasker",
+  pageTitle: "TextMasker - 簡単秘匿情報マスキング",
+  logoText: "TextMasker",
+  eyebrow: "簡単秘匿情報マスキング",
   ledeLines: [
-    "AIに秘匿情報を送ったりしていませんか？",
-    "このツールで秘匿化してから送ったほうが安心ですよ！",
+    "業務で扱う機密情報を、ブラウザ内で安全にマスキングします。",
     "外部へのデータ送信は行っておりませんので、ローカルにダウンロードすればインターネット接続がなくても動作します。"
   ],
-  demoUrl: "https://igu0j4i21yo12u.github.io/texmask/",
+  demoUrl: "https://igs-service.github.io/textmasker/",
   demoLabel: "デモサイト（ブラウザで試す）",
-  repoUrl: "https://github.com/igu0j4i21yo12u/texmask",
+  repoUrl: "https://github.com/igs-service/textmasker",
   repoLabel: "GitHubから取得",
-  zipUrl: "https://github.com/igu0j4i21yo12u/texmask/releases/latest/download/TexMask-latest.zip",
+  zipUrl: "https://github.com/igs-service/textmasker/releases/latest/download/TextMasker-latest.zip",
   zipLabel: "ZIPでダウンロード",
-  footerText: "Copyrights 2026 igu0j4i21yo12u",
-  footerLinkUrl: "https://x.com/igu0j4i21yo12u",
-  footerLinkLabel: "(X Account)"
+  footerText: "IGS LLC.",
+  footerLinkUrl: "https://github.com/igs-service",
+  footerLinkLabel: "TextMasker"
 };
 function getBrandConfig() {
   return brandConfig || {};
@@ -196,8 +210,9 @@ const STORAGE_KEY = "masking-web-state-v1";
 const PRESET_KEY = "masking-web-presets-v1";
 const ADDRESS_DICT_CUSTOM_KEY = "masking-web-address-dict-custom-v1";
 const ADDRESS_PREF_SELECTION_KEY = "masking-web-address-pref-selection-v1";
-const ADDRESS_DICT_LOCAL_URL = "address-dict.json";
-const ADDRESS_TOWN_DICT_URL = "address-town-dict.json";
+const TEXT_DICT_KEY = "masking-web-text-dict-v1";
+const ADDRESS_DICT_LOCAL_URL = "data/address-dict.json";
+const ADDRESS_TOWN_DICT_URL = "data/address-town-dict.json";
 const GEOLONIA_API_URL = "https://geolonia.github.io/japanese-addresses/api/ja.json";
 const ASYNC_MASK_THRESHOLD = 2e4;
 const COPY_FEEDBACK_DURATION_MS = 1200;
@@ -205,6 +220,8 @@ const SESSION_ID_LENGTH = 4;
 const ADDRESS_PATTERN_CHUNK_SIZE = 2e3;
 const ADDRESS_SEARCH_LIMIT = 50;
 const DICT_IMPORT_BACKUP_PREFIX = "転記前バックアップ";
+const TEXT_DICT_MAX_LABELS = 10;
+const TEXT_DICT_MAX_ROWS_PER_LABEL = 1e5;
 const ADDRESS_PREFECTURES = [
   "北海道",
   "青森県",
@@ -270,6 +287,7 @@ let currentSessionId = null;
 let currentMaskDictionary = null;
 let currentUnmaskDictionary = null;
 let maskRunId = 0;
+let textDictionaries = [];
 const state = {
   rules: []
 };
@@ -279,7 +297,6 @@ function buildStatePayload(readDictRows2) {
     inputText: ui.inputText.value,
     sampleSelect: ui.sampleSelect.value,
     useRandomSessionId: ((_a = ui.useRandomSessionId) == null ? void 0 : _a.checked) ?? true,
-    numberWidth: ui.numberWidth.value,
     dictDefaultPrefix: ui.dictDefaultPrefix.value,
     dictRows: readDictRows2 ? readDictRows2() : [],
     rules: state.rules.map((rule) => ({
@@ -303,9 +320,6 @@ function applyStatePayload(payload, baseRules2) {
   }
   if (typeof payload.useRandomSessionId === "boolean" && ui.useRandomSessionId) {
     ui.useRandomSessionId.checked = payload.useRandomSessionId;
-  }
-  if (typeof payload.numberWidth === "string") {
-    ui.numberWidth.value = payload.numberWidth;
   }
   if (typeof payload.dictDefaultPrefix === "string") {
     ui.dictDefaultPrefix.value = payload.dictDefaultPrefix;
@@ -401,6 +415,9 @@ function setCurrentUnmaskDictionary(value) {
 function incrementMaskRunId() {
   maskRunId++;
   return maskRunId;
+}
+function setTextDictionaries(value) {
+  textDictionaries = value;
 }
 function sanitizeFileName(name) {
   return name.replace(/[\\/:*?"<>|]/g, "_").trim() || "config";
@@ -1414,10 +1431,6 @@ function generateSessionId() {
   }
   return result;
 }
-function getNumberWidth() {
-  const parsed = Number.parseInt(ui.numberWidth.value, 10);
-  return Number.isFinite(parsed) ? parsed : 3;
-}
 function regenerateSessionId(maskText2) {
   const newId = generateSessionId();
   setCurrentSessionId(newId);
@@ -1926,7 +1939,7 @@ function loadLocalAddressDictFromScript() {
   }
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = "address-dict.js";
+    script.src = "data/address-dict.js";
     script.onload = () => {
       if (typeof ADDRESS_PATTERNS !== "undefined" && Array.isArray(ADDRESS_PATTERNS)) {
         resolve({
@@ -2208,11 +2221,55 @@ function resolveExportName() {
   return name;
 }
 const ADDRESS_BLOCK_PATTERN = "(?:[0-9０-９一二三四五六七八九十百千〇零]{1,3}丁目s*[0-9０-９一二三四五六七八九十百千〇零]{1,3}番s*[0-9０-９一二三四五六七八九十百千〇零]{1,3}号?|[0-9０-９一二三四五六七八九十百千〇零]{1,3}丁目s*[0-9０-９一二三四五六七八九十百千〇零]{1,3}(?:番|号)|[0-9０-９一二三四五六七八九十百千〇零]{1,3}丁目|[東西南北]?[0-9０-９一二三四五六七八九十百千〇零]{1,3}条[東西南北]?[0-9０-９一二三四五六七八九十百千〇零]{1,3}丁目?|[0-9０-９一二三四五六七八九十百千〇零]{1,3}(?:[-‐ー－]|の)[0-9０-９一二三四五六七八九十百千〇零]{1,3}(?:(?:[-‐ー－]|の)[0-9０-９一二三四五六七八九十百千〇零]{1,3})?)(?![0-9０-９])";
+const DEFAULT_NUMBER_WIDTH = 3;
+function mergeRulesWithPriority(baseRules2, textDictRules) {
+  if (!textDictRules || textDictRules.length === 0) {
+    return baseRules2;
+  }
+  const result = [];
+  const baseRulesCount = baseRules2.length;
+  const priority1 = [];
+  const priority2 = [];
+  const priority3 = [];
+  const priority4 = [];
+  const priority5 = [];
+  textDictRules.forEach((rule) => {
+    if (rule.priority === 1) priority1.push(rule);
+    else if (rule.priority === 2) priority2.push(rule);
+    else if (rule.priority === 3) priority3.push(rule);
+    else if (rule.priority === 4) priority4.push(rule);
+    else if (rule.priority === 5) priority5.push(rule);
+  });
+  const sortByOrder = (a, b) => a.orderInPriority - b.orderInPriority;
+  priority1.sort(sortByOrder);
+  priority2.sort(sortByOrder);
+  priority3.sort(sortByOrder);
+  priority4.sort(sortByOrder);
+  priority5.sort(sortByOrder);
+  result.push(...priority1);
+  const pos75 = Math.floor(baseRulesCount * 0.75);
+  const pos50 = Math.floor(baseRulesCount * 0.5);
+  const pos25 = Math.floor(baseRulesCount * 0.25);
+  for (let i = 0; i < baseRulesCount; i++) {
+    if (i === pos75 && priority2.length > 0) {
+      result.push(...priority2);
+    }
+    if (i === pos50 && priority3.length > 0) {
+      result.push(...priority3);
+    }
+    if (i === pos25 && priority4.length > 0) {
+      result.push(...priority4);
+    }
+    result.push(baseRules2[i]);
+  }
+  result.push(...priority5);
+  return result;
+}
 function applyRule(text, rule, placeholders, counts) {
   if (!rule.pattern) {
     return text;
   }
-  const numberWidth = getNumberWidth();
+  const numberWidth = DEFAULT_NUMBER_WIDTH;
   const regex = rule._compiledRegex || (rule._compiledRegex = buildRuleRegex(rule));
   let hits = 0;
   const replaced = text.replace(regex, (match) => {
@@ -2228,7 +2285,7 @@ function applyAddressBlockRules(text, placeholders, counts) {
   if (!addressPatternChunks.length) {
     return text;
   }
-  const numberWidth = getNumberWidth();
+  const numberWidth = DEFAULT_NUMBER_WIDTH;
   const blockRegex = new RegExp(ADDRESS_BLOCK_PATTERN, "g");
   const chunkRegexes = addressPatternChunks.map((chunk) => new RegExp(chunk));
   const addressPlaceholderRegex = /\{\{[^}]*:ADDRESS:\d+\}\}/;
@@ -2309,7 +2366,7 @@ async function attachDictionarySignature(dict) {
     window.updateUnmaskDictStatus(dict);
   }
 }
-function maskTextSync(source, buildDictionaryRules2, buildAddressRules2) {
+function maskTextSync(source, buildDictionaryRules2, buildAddressRules2, buildTextDictionaryRules2) {
   var _a;
   if (!currentSessionId) {
     setCurrentSessionId(generateSessionId());
@@ -2331,7 +2388,9 @@ function maskTextSync(source, buildDictionaryRules2, buildAddressRules2) {
       result = applyRule(result, addressRule, placeholders, counts);
     });
     result = applyAddressBlockRules(result, placeholders, counts);
-    state.rules.forEach((rule) => {
+    const textDictRules = buildTextDictionaryRules2 ? buildTextDictionaryRules2() : [];
+    const mergedRules = mergeRulesWithPriority(state.rules, textDictRules);
+    mergedRules.forEach((rule) => {
       if (!rule.enabled) {
         return;
       }
@@ -2352,7 +2411,7 @@ function maskTextSync(source, buildDictionaryRules2, buildAddressRules2) {
     return false;
   }
 }
-async function maskTextAsync(source, runId, buildDictionaryRules2, buildAddressRules2) {
+async function maskTextAsync(source, runId, buildDictionaryRules2, buildAddressRules2, buildTextDictionaryRules2) {
   var _a;
   const shouldYield = source.length > ASYNC_MASK_THRESHOLD;
   const yieldToBrowser = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -2385,7 +2444,9 @@ async function maskTextAsync(source, runId, buildDictionaryRules2, buildAddressR
       }
     }
     result = applyAddressBlockRules(result, placeholders, counts);
-    for (const rule of state.rules) {
+    const textDictRules = buildTextDictionaryRules2 ? buildTextDictionaryRules2() : [];
+    const mergedRules = mergeRulesWithPriority(state.rules, textDictRules);
+    for (const rule of mergedRules) {
       if (!rule.enabled) {
         continue;
       }
@@ -2409,7 +2470,7 @@ async function maskTextAsync(source, runId, buildDictionaryRules2, buildAddressR
     updateStatusDisplay("正規表現の形式が不正です。", true);
   }
 }
-function maskText(buildDictionaryRules2, buildAddressRules2) {
+function maskText(buildDictionaryRules2, buildAddressRules2, buildTextDictionaryRules2) {
   const source = ui.inputText.value || "";
   const runId = incrementMaskRunId();
   if (!source.trim()) {
@@ -2424,13 +2485,517 @@ function maskText(buildDictionaryRules2, buildAddressRules2) {
   }
   if (source.length > ASYNC_MASK_THRESHOLD) {
     updateStatusDisplay("マスク処理中...");
-    maskTextAsync(source, runId, buildDictionaryRules2, buildAddressRules2);
+    maskTextAsync(source, runId, buildDictionaryRules2, buildAddressRules2, buildTextDictionaryRules2);
     return;
   }
-  maskTextSync(source, buildDictionaryRules2, buildAddressRules2);
+  maskTextSync(source, buildDictionaryRules2, buildAddressRules2, buildTextDictionaryRules2);
 }
 function scheduleMask() {
   return;
+}
+function generateUUID() {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === "x" ? r : r & 3 | 8;
+    return v.toString(16);
+  });
+}
+function parseTXT(text) {
+  if (!text || typeof text !== "string") {
+    return [];
+  }
+  return text.split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
+}
+function parseCSV(text) {
+  if (!text || typeof text !== "string") {
+    return { valid: false, errors: ["空のデータです"] };
+  }
+  const lines = text.split("\n").filter((line) => line.trim());
+  const labelMap = /* @__PURE__ */ new Map();
+  const errors = [];
+  lines.forEach((line, index) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    if (!trimmed.includes(",")) {
+      errors.push(`${index + 1}行目: カンマが含まれていません`);
+      return;
+    }
+    const firstCommaIndex = trimmed.indexOf(",");
+    const value = trimmed.substring(0, firstCommaIndex).trim();
+    const label = trimmed.substring(firstCommaIndex + 1).trim();
+    if (!value || !label) {
+      errors.push(`${index + 1}行目: 値またはラベルが空です`);
+      return;
+    }
+    if (!labelMap.has(label)) {
+      labelMap.set(label, []);
+    }
+    labelMap.get(label).push(value);
+  });
+  if (errors.length > 0) {
+    return { valid: false, errors };
+  }
+  if (labelMap.size > TEXT_DICT_MAX_LABELS) {
+    return {
+      valid: false,
+      errors: [`ラベル数が上限（${TEXT_DICT_MAX_LABELS}種類）を超えています: ${labelMap.size}種類`]
+    };
+  }
+  for (const [label, entries] of labelMap.entries()) {
+    if (entries.length > TEXT_DICT_MAX_ROWS_PER_LABEL) {
+      errors.push(`ラベル「${label}」の行数が上限（${TEXT_DICT_MAX_ROWS_PER_LABEL.toLocaleString()}行）を超えています: ${entries.length.toLocaleString()}行`);
+    }
+  }
+  if (errors.length > 0) {
+    return { valid: false, errors };
+  }
+  return { valid: true, data: labelMap };
+}
+function loadTextDictionaries() {
+  try {
+    const raw = localStorage.getItem(TEXT_DICT_KEY);
+    if (!raw) {
+      return [];
+    }
+    const data = JSON.parse(raw);
+    if (!data || !Array.isArray(data.textDictionaries)) {
+      return [];
+    }
+    return data.textDictionaries;
+  } catch (err) {
+    console.warn("Failed to load text dictionaries from localStorage:", err);
+    return [];
+  }
+}
+function saveTextDictionaries(dictionaries) {
+  try {
+    const data = {
+      textDictionaries: dictionaries
+    };
+    localStorage.setItem(TEXT_DICT_KEY, JSON.stringify(data));
+  } catch (err) {
+    console.error("Failed to save text dictionaries to localStorage:", err);
+    throw new Error("テキスト辞書の保存に失敗しました");
+  }
+}
+function createTextDictionary(label, entries, priority = 3) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const existingDicts = textDictionaries.filter((d) => d.priority === priority);
+  const maxOrder = existingDicts.length > 0 ? Math.max(...existingDicts.map((d) => d.orderInPriority)) : -1;
+  return {
+    id: generateUUID(),
+    label: label.trim(),
+    entries: entries.map((e) => e.trim()).filter((e) => e.length > 0),
+    enabled: true,
+    priority,
+    orderInPriority: maxOrder + 1,
+    createdAt: now,
+    updatedAt: now
+  };
+}
+function updateTextDictionary(id, updates) {
+  const index = textDictionaries.findIndex((d) => d.id === id);
+  if (index === -1) {
+    return false;
+  }
+  const dict = textDictionaries[index];
+  const updated = {
+    ...dict,
+    ...updates,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (updates.priority !== void 0 && updates.priority !== dict.priority) {
+    const existingDicts = textDictionaries.filter(
+      (d) => d.priority === updates.priority && d.id !== id
+    );
+    const maxOrder = existingDicts.length > 0 ? Math.max(...existingDicts.map((d) => d.orderInPriority)) : -1;
+    updated.orderInPriority = maxOrder + 1;
+  }
+  textDictionaries[index] = updated;
+  saveTextDictionaries(textDictionaries);
+  return true;
+}
+function deleteTextDictionary(id) {
+  const index = textDictionaries.findIndex((d) => d.id === id);
+  if (index === -1) {
+    return false;
+  }
+  textDictionaries.splice(index, 1);
+  saveTextDictionaries(textDictionaries);
+  return true;
+}
+function exportTextDictionary(id, appName = "TexMask") {
+  const dict = textDictionaries.find((d) => d.id === id);
+  if (!dict) {
+    return null;
+  }
+  const now = /* @__PURE__ */ new Date();
+  const dateStr = now.toISOString().split("T")[0].replace(/-/g, "");
+  const filename = `${appName}_CustomDIC-${dict.label}-${dateStr}.txt`;
+  const content = dict.entries.join("\n");
+  return { filename, content };
+}
+function findDictionaryByLabel(label) {
+  return textDictionaries.find((d) => d.label === label) || null;
+}
+function mergeEntries(existing, newEntries) {
+  const existingSet = new Set(existing);
+  const uniqueNew = newEntries.filter((entry) => !existingSet.has(entry));
+  return [...existing, ...uniqueNew];
+}
+function buildTextDictionaryRules() {
+  const rules = [];
+  const enabledDicts = textDictionaries.filter((d) => d.enabled);
+  enabledDicts.forEach((dict, index) => {
+    dict.entries.forEach((entry, entryIndex) => {
+      const pattern = escapeRegExp(entry);
+      rules.push({
+        name: `text_dict_${dict.id}_${entryIndex}`,
+        label: dict.label,
+        pattern,
+        isTextDictionary: true,
+        textDictId: dict.id,
+        priority: dict.priority,
+        orderInPriority: dict.orderInPriority,
+        prefix: dict.label.toUpperCase()
+      });
+    });
+  });
+  return rules;
+}
+function initTextDictionaries() {
+  const loaded = loadTextDictionaries();
+  setTextDictionaries(loaded);
+}
+let currentEditingId = null;
+function initTextDictionaryUI() {
+  initTextDictionaries();
+  setupEventListeners();
+  renderTextDictionaryList();
+}
+function setupEventListeners() {
+  var _a, _b, _c;
+  (_a = ui.textDictAddBtn) == null ? void 0 : _a.addEventListener("click", () => {
+    showForm("add");
+  });
+  (_b = ui.textDictCancelBtn) == null ? void 0 : _b.addEventListener("click", () => {
+    hideForm();
+  });
+  (_c = ui.textDictSubmitBtn) == null ? void 0 : _c.addEventListener("click", () => {
+    if (currentEditingId) {
+      handleUpdate();
+    } else {
+      handleSubmit();
+    }
+  });
+  Array.from(ui.textDictInputModeRadios || []).forEach((radio) => {
+    radio.addEventListener("change", () => {
+      updateFormVisibility();
+    });
+  });
+  Array.from(ui.textDictFileFormatRadios || []).forEach((radio) => {
+    radio.addEventListener("change", () => {
+      updateFormVisibility();
+    });
+  });
+}
+function updateFormVisibility() {
+  const inputMode = getSelectedInputMode();
+  const fileFormat = getSelectedFileFormat();
+  if (inputMode === "textarea") {
+    ui.textDictFileFormatRow.hidden = true;
+    ui.textDictFileRow.hidden = true;
+    ui.textDictTextareaRow.hidden = false;
+    ui.textDictLabel.disabled = false;
+  } else {
+    ui.textDictFileFormatRow.hidden = false;
+    ui.textDictFileRow.hidden = false;
+    ui.textDictTextareaRow.hidden = true;
+    if (fileFormat === "csv") {
+      ui.textDictLabel.disabled = true;
+    } else {
+      ui.textDictLabel.disabled = false;
+    }
+  }
+}
+function getSelectedInputMode() {
+  const checked = Array.from(ui.textDictInputModeRadios || []).find((r) => r.checked);
+  return checked ? checked.value : "textarea";
+}
+function getSelectedFileFormat() {
+  const checked = Array.from(ui.textDictFileFormatRadios || []).find((r) => r.checked);
+  return checked ? checked.value : "txt";
+}
+function showForm(mode, dict = null) {
+  currentEditingId = dict ? dict.id : null;
+  if (mode === "edit" && dict) {
+    ui.textDictFormTitle.textContent = "辞書の編集";
+    ui.textDictSubmitBtn.textContent = "更新";
+    ui.textDictLabel.value = dict.label;
+    ui.textDictPriority.value = String(dict.priority);
+    ui.textDictContent.value = dict.entries.join("\n");
+    const textareaRadio = Array.from(ui.textDictInputModeRadios).find((r) => r.value === "textarea");
+    if (textareaRadio) textareaRadio.checked = true;
+  } else {
+    ui.textDictFormTitle.textContent = "辞書の追加";
+    ui.textDictSubmitBtn.textContent = "登録";
+    ui.textDictLabel.value = "";
+    ui.textDictPriority.value = "3";
+    ui.textDictContent.value = "";
+    ui.textDictFileInput.value = "";
+    const textareaRadio = Array.from(ui.textDictInputModeRadios).find((r) => r.value === "textarea");
+    if (textareaRadio) textareaRadio.checked = true;
+  }
+  updateFormVisibility();
+  ui.textDictForm.hidden = false;
+}
+function hideForm() {
+  ui.textDictForm.hidden = true;
+  currentEditingId = null;
+}
+async function handleSubmit() {
+  try {
+    const inputMode = getSelectedInputMode();
+    const fileFormat = getSelectedFileFormat();
+    const label = ui.textDictLabel.value.trim();
+    const priority = Number.parseInt(ui.textDictPriority.value, 10);
+    let entries = [];
+    if (inputMode === "textarea") {
+      if (!label) {
+        updateStatusDisplay("ラベル名を入力してください", true);
+        return;
+      }
+      const content = ui.textDictContent.value;
+      if (!content.trim()) {
+        updateStatusDisplay("内容を入力してください", true);
+        return;
+      }
+      entries = parseTXT(content);
+    } else {
+      const file = ui.textDictFileInput.files[0];
+      if (!file) {
+        updateStatusDisplay("ファイルを選択してください", true);
+        return;
+      }
+      const content = await readFileAsText(file);
+      if (fileFormat === "txt") {
+        if (!label) {
+          updateStatusDisplay("ラベル名を入力してください", true);
+          return;
+        }
+        entries = parseTXT(content);
+      } else {
+        const result = parseCSV(content);
+        if (!result.valid) {
+          updateStatusDisplay(`CSVエラー:
+${result.errors.join("\n")}`, true);
+          return;
+        }
+        for (const [csvLabel, csvEntries] of result.data.entries()) {
+          await handleSingleLabelSubmit(csvLabel, csvEntries, priority);
+        }
+        hideForm();
+        renderTextDictionaryList();
+        updateStatusDisplay(`${result.data.size}個の辞書を登録しました`);
+        return;
+      }
+    }
+    await handleSingleLabelSubmit(label, entries, priority);
+    hideForm();
+    renderTextDictionaryList();
+    updateStatusDisplay(`辞書「${label}」を登録しました`);
+  } catch (err) {
+    console.error("Registration error:", err);
+    updateStatusDisplay(`登録エラー: ${err.message}`, true);
+  }
+}
+async function handleSingleLabelSubmit(label, entries, priority) {
+  if (entries.length > TEXT_DICT_MAX_ROWS_PER_LABEL) {
+    throw new Error(`ラベル「${label}」の行数が上限（${TEXT_DICT_MAX_ROWS_PER_LABEL.toLocaleString()}行）を超えています: ${entries.length.toLocaleString()}行`);
+  }
+  const existing = findDictionaryByLabel(label);
+  if (existing) {
+    const action = await askUserAction(label);
+    if (action === "skip") {
+      return;
+    } else if (action === "overwrite") {
+      deleteTextDictionary(existing.id);
+      const newDict = createTextDictionary(label, entries, priority);
+      textDictionaries.push(newDict);
+      saveTextDictionaries(textDictionaries);
+    } else if (action === "merge") {
+      const merged = mergeEntries(existing.entries, entries);
+      updateTextDictionary(existing.id, { entries: merged });
+    }
+  } else {
+    const newDict = createTextDictionary(label, entries, priority);
+    textDictionaries.push(newDict);
+    saveTextDictionaries(textDictionaries);
+  }
+}
+function askUserAction(label) {
+  return new Promise((resolve) => {
+    const message = `ラベル「${label}」は既に存在します。
+
+上書き: 既存を削除して新規作成
+スキップ: インポート中止
+結合: 既存に追加（重複排除）`;
+    const result = window.prompt(message + "\n\n「overwrite」「skip」「merge」のいずれかを入力してください:", "skip");
+    if (result === "overwrite" || result === "merge" || result === "skip") {
+      resolve(result);
+    } else {
+      resolve("skip");
+    }
+  });
+}
+function handleUpdate() {
+  try {
+    const label = ui.textDictLabel.value.trim();
+    const priority = Number.parseInt(ui.textDictPriority.value, 10);
+    const content = ui.textDictContent.value;
+    if (!label) {
+      updateStatusDisplay("ラベル名を入力してください", true);
+      return;
+    }
+    if (!content.trim()) {
+      updateStatusDisplay("内容を入力してください", true);
+      return;
+    }
+    const entries = parseTXT(content);
+    if (entries.length > TEXT_DICT_MAX_ROWS_PER_LABEL) {
+      updateStatusDisplay(`行数が上限（${TEXT_DICT_MAX_ROWS_PER_LABEL.toLocaleString()}行）を超えています: ${entries.length.toLocaleString()}行`, true);
+      return;
+    }
+    const success = updateTextDictionary(currentEditingId, { label, priority, entries });
+    if (success) {
+      hideForm();
+      renderTextDictionaryList();
+      updateStatusDisplay(`辞書「${label}」を更新しました`);
+    } else {
+      updateStatusDisplay("更新に失敗しました", true);
+    }
+  } catch (err) {
+    console.error("Update error:", err);
+    updateStatusDisplay(`更新エラー: ${err.message}`, true);
+  }
+}
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.onerror = () => reject(new Error("ファイル読み込みエラー"));
+    reader.readAsText(file, "UTF-8");
+  });
+}
+function renderTextDictionaryList() {
+  if (!ui.textDictList) return;
+  ui.textDictList.innerHTML = "";
+  if (textDictionaries.length === 0) {
+    ui.textDictListEmpty.hidden = false;
+    return;
+  }
+  ui.textDictListEmpty.hidden = true;
+  const groups = /* @__PURE__ */ new Map();
+  for (let priority = 1; priority <= 5; priority++) {
+    groups.set(priority, []);
+  }
+  textDictionaries.forEach((dict) => {
+    groups.get(dict.priority).push(dict);
+  });
+  for (const [priority, dicts] of groups.entries()) {
+    if (dicts.length === 0) continue;
+    const priorityLabel = getPriorityLabel(priority);
+    const groupHeader = document.createElement("div");
+    groupHeader.className = "text-dict-group-header";
+    groupHeader.textContent = `優先度${priority}${priorityLabel}グループ`;
+    ui.textDictList.appendChild(groupHeader);
+    dicts.sort((a, b) => a.orderInPriority - b.orderInPriority);
+    dicts.forEach((dict) => {
+      const item = createDictItem(dict);
+      ui.textDictList.appendChild(item);
+    });
+  }
+}
+function getPriorityLabel(priority) {
+  if (priority === 1) return "(High)";
+  if (priority === 3) return "(Mid)";
+  if (priority === 5) return "(Low)";
+  return "";
+}
+function createDictItem(dict) {
+  const item = document.createElement("div");
+  item.className = "text-dict-item";
+  item.dataset.id = dict.id;
+  const handle = document.createElement("span");
+  handle.className = "text-dict-handle";
+  handle.textContent = "⋮⋮";
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = dict.enabled;
+  checkbox.addEventListener("change", () => {
+    updateTextDictionary(dict.id, { enabled: checkbox.checked });
+    updateStatusDisplay(`辞書「${dict.label}」を${checkbox.checked ? "有効" : "無効"}にしました`);
+  });
+  const label = document.createElement("strong");
+  label.textContent = `${dict.label} (${dict.entries.length.toLocaleString()}件)`;
+  const actions = document.createElement("div");
+  actions.className = "text-dict-actions";
+  const editBtn = document.createElement("button");
+  editBtn.type = "button";
+  editBtn.className = "ghost small";
+  editBtn.textContent = "編集";
+  editBtn.addEventListener("click", () => {
+    showForm("edit", dict);
+  });
+  const exportBtn = document.createElement("button");
+  exportBtn.type = "button";
+  exportBtn.className = "ghost small";
+  exportBtn.textContent = "エクスポート";
+  exportBtn.addEventListener("click", () => {
+    handleExport(dict.id);
+  });
+  const deleteBtn = document.createElement("button");
+  deleteBtn.type = "button";
+  deleteBtn.className = "ghost small";
+  deleteBtn.textContent = "削除";
+  deleteBtn.addEventListener("click", () => {
+    handleDelete(dict.id, dict.label);
+  });
+  actions.appendChild(editBtn);
+  actions.appendChild(exportBtn);
+  actions.appendChild(deleteBtn);
+  item.appendChild(handle);
+  item.appendChild(checkbox);
+  item.appendChild(label);
+  item.appendChild(actions);
+  return item;
+}
+function handleExport(id) {
+  const result = exportTextDictionary(id);
+  if (!result) {
+    updateStatusDisplay("エクスポートに失敗しました", true);
+    return;
+  }
+  const blob = new Blob([result.content], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = result.filename;
+  a.click();
+  URL.revokeObjectURL(url);
+  updateStatusDisplay(`${result.filename} をダウンロードしました`);
+}
+function handleDelete(id, label) {
+  if (!window.confirm(`辞書「${label}」を削除しますか？`)) {
+    return;
+  }
+  const success = deleteTextDictionary(id);
+  if (success) {
+    renderTextDictionaryList();
+    updateStatusDisplay(`辞書「${label}」を削除しました`);
+  } else {
+    updateStatusDisplay("削除に失敗しました", true);
+  }
 }
 function clearInput() {
   ui.inputText.value = "";
@@ -2551,8 +3116,9 @@ function init() {
   renderAddressPrefectureFilters();
   loadAddressDict();
   loadTownAddressDict();
+  initTextDictionaryUI();
   if (ui.maskForwardBtn) {
-    ui.maskForwardBtn.addEventListener("click", () => maskText(buildDictionaryRules, buildAddressRules));
+    ui.maskForwardBtn.addEventListener("click", () => maskText(buildDictionaryRules, buildAddressRules, buildTextDictionaryRules));
   }
   if (ui.unmaskBackwardBtn) {
     ui.unmaskBackwardBtn.addEventListener("click", () => {
@@ -2611,9 +3177,6 @@ function init() {
     ui.presetName.value = ui.presetSelect.value;
   });
   ui.inputText.addEventListener("input", () => {
-    persistState(readDictRows);
-  });
-  ui.numberWidth.addEventListener("change", () => {
     persistState(readDictRows);
   });
   if (ui.useRandomSessionId) {

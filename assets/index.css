@@ -144,6 +144,10 @@ a:hover {
   grid-column: span 12;
 }
 
+.tab-panel[data-tab-panel="text-dictionary"] {
+  grid-column: span 12;
+}
+
 .tab-panel[data-tab-panel="address"] {
   grid-column: span 12;
 }
@@ -922,6 +926,134 @@ input[type="text"] {
 
 .panel-actions input[type="file"] {
   display: none;
+}
+
+/* ====================
+   Text Dictionary Styles
+   ==================== */
+
+.text-dict-form {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.text-dict-form h3 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  font-size: 1.2rem;
+}
+
+.form-row {
+  margin-bottom: 1rem;
+}
+
+.form-row label {
+  display: block;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
+
+.form-row input[type="text"] {
+  min-width: 300px;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.form-row select {
+  min-width: 200px;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.form-row textarea {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.form-row input:disabled {
+  background: #f0f0f0;
+  color: #999;
+  cursor: not-allowed;
+}
+
+.radio-group {
+  display: flex;
+  gap: 1rem;
+}
+
+.radio-group label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: normal;
+  margin-bottom: 0;
+}
+
+.form-notice {
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  padding: 0.75rem;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.form-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
+.text-dict-list {
+  margin-top: 0.5rem;
+}
+
+.text-dict-group-header {
+  font-weight: 600;
+  padding: 0.5rem 0;
+  margin-top: 0.75rem;
+  color: var(--primary);
+}
+
+.text-dict-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+}
+
+.text-dict-handle {
+  cursor: move;
+  color: var(--muted);
+  user-select: none;
+}
+
+.text-dict-item strong {
+  flex: 1;
+}
+
+.text-dict-actions {
+  display: flex;
+  gap: 0.5rem;
 }
 :root {
   --bg: #eef3f7;

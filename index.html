@@ -34,6 +34,9 @@
         <button class="tab" type="button" data-tab="dictionary" role="tab" aria-selected="false">
           任意辞書
         </button>
+        <button class="tab" type="button" data-tab="text-dictionary" role="tab" aria-selected="false">
+          テキスト辞書
+        </button>
         <button class="tab" type="button" data-tab="address" role="tab" aria-selected="false">
           住所辞書
         </button>
@@ -107,16 +110,6 @@
         <section class="panel stats-panel output-settings tab-panel is-active" data-tab-panel="work" role="region">
           <h2>設定</h2>
           <div class="output-settings-row" id="outputSettingsRow">
-            <div id="numberWidthRow" class="setting-row">
-              <label for="numberWidth">番号桁数の設定</label>
-              <div class="setting-content">
-                <select id="numberWidth">
-                  <option value="2">2桁 (例 &lt;IPv4_01&gt;)</option>
-                  <option value="3" selected>3桁 (例 &lt;IPv4_001&gt;)</option>
-                  <option value="4">4桁 (例 &lt;IPv4_0001&gt;)</option>
-                </select>
-              </div>
-            </div>
             <div class="setting-row">
               <span class="setting-title">ランダムセッションID設定</span>
               <div class="setting-content">
@@ -184,6 +177,101 @@
                 <button id="dictImportBasic" class="ghost small" type="button">基本設定を転記</button>
               </div>
             </div>
+          </div>
+        </aside>
+
+        <aside class="panel settings tab-panel" data-tab-panel="text-dictionary" role="tabpanel">
+          <h2>テキスト辞書</h2>
+          <p class="lede">
+            大量のデータを一括マスキングできます。<br />
+            - TXT形式: 1行1エントリ<br />
+            - CSV形式: 値,ラベル名
+          </p>
+
+          <div class="setting-group">
+            <button id="textDictAddBtn" class="primary" type="button">辞書の追加</button>
+
+            <!-- インライン展開フォーム -->
+            <div id="textDictForm" class="text-dict-form" hidden>
+              <h3 id="textDictFormTitle">辞書の追加</h3>
+
+              <div class="form-row">
+                <label>登録方法:</label>
+                <div class="radio-group">
+                  <label>
+                    <input type="radio" name="textDictInputMode" value="textarea" checked />
+                    テキストエリア入力
+                  </label>
+                  <label>
+                    <input type="radio" name="textDictInputMode" value="file" />
+                    ファイルから登録
+                  </label>
+                </div>
+              </div>
+
+              <div id="textDictFileFormatRow" class="form-row" hidden>
+                <label>ファイル形式*:</label>
+                <div class="radio-group">
+                  <label>
+                    <input type="radio" name="textDictFileFormat" value="txt" checked />
+                    TXT (1行1エントリ)
+                  </label>
+                  <label>
+                    <input type="radio" name="textDictFileFormat" value="csv" />
+                    CSV (値,ラベル名)
+                  </label>
+                </div>
+              </div>
+
+              <div id="textDictFileRow" class="form-row" hidden>
+                <label for="textDictFileInput">ファイル:</label>
+                <input type="file" id="textDictFileInput" accept=".txt,.csv,text/plain,text/csv" />
+              </div>
+
+              <div class="form-row">
+                <label for="textDictLabel">ラベル名*:</label>
+                <input type="text" id="textDictLabel" placeholder="例: IPv4" />
+              </div>
+
+              <div class="form-row">
+                <label for="textDictPriority">優先度:</label>
+                <select id="textDictPriority">
+                  <option value="1">1 (High)</option>
+                  <option value="2">2</option>
+                  <option value="3" selected>3 (Mid)</option>
+                  <option value="4">4</option>
+                  <option value="5">5 (Low)</option>
+                </select>
+              </div>
+
+              <div id="textDictTextareaRow" class="form-row">
+                <label for="textDictContent">内容（1行1レコード）*:</label>
+                <textarea id="textDictContent" rows="10" placeholder="192.168.1.1
+192.168.1.2
+100,000円
+..."></textarea>
+              </div>
+
+              <div class="form-notice">
+                <strong>⚠️ 注意:</strong><br />
+                最大10万件まで登録可能です。<br />
+                環境によってはブラウザのパフォーマンスに影響を与える可能性があります。<br />
+                フリーズする場合は分割や外部エディタ編集を推奨します。
+              </div>
+
+              <div class="form-actions">
+                <button id="textDictCancelBtn" class="ghost" type="button">キャンセル</button>
+                <button id="textDictSubmitBtn" class="primary" type="button">登録</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <span>登録済み辞書一覧</span>
+            <div id="textDictList" class="text-dict-list">
+              <!-- 動的に生成 -->
+            </div>
+            <p id="textDictListEmpty" class="dict-status">登録された辞書はありません</p>
           </div>
         </aside>
 
