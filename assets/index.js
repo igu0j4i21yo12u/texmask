@@ -2222,6 +2222,52 @@ function resolveExportName() {
 }
 const ADDRESS_BLOCK_PATTERN = "(?:[0-9０-９一二三四五六七八九十百千〇零]{1,3}丁目s*[0-9０-９一二三四五六七八九十百千〇零]{1,3}番s*[0-9０-９一二三四五六七八九十百千〇零]{1,3}号?|[0-9０-９一二三四五六七八九十百千〇零]{1,3}丁目s*[0-9０-９一二三四五六七八九十百千〇零]{1,3}(?:番|号)|[0-9０-９一二三四五六七八九十百千〇零]{1,3}丁目|[東西南北]?[0-9０-９一二三四五六七八九十百千〇零]{1,3}条[東西南北]?[0-9０-９一二三四五六七八九十百千〇零]{1,3}丁目?|[0-9０-９一二三四五六七八九十百千〇零]{1,3}(?:[-‐ー－]|の)[0-9０-９一二三四五六七八九十百千〇零]{1,3}(?:(?:[-‐ー－]|の)[0-9０-９一二三四五六七八九十百千〇零]{1,3})?)(?![0-9０-９])";
 const DEFAULT_NUMBER_WIDTH = 3;
+function collectActivePrefixes(dictRules, addressRules, textDictRules) {
+  const prefixes = /* @__PURE__ */ new Set();
+  const add = (value) => {
+    if (!value) {
+      return;
+    }
+    prefixes.add(String(value).toUpperCase());
+  };
+  state.rules.forEach((rule) => {
+    if (rule.enabled) {
+      add(rule.prefix);
+    }
+  });
+  dictRules.forEach((rule) => add(rule.prefix));
+  addressRules.forEach((rule) => add(rule.prefix));
+  textDictRules.forEach((rule) => add(rule.prefix));
+  if (addressRules.length) {
+    add("ADDRESS_BLOCK");
+    add("ADDRESS_MID");
+  }
+  return prefixes;
+}
+function isActivePlaceholderAt(text, index, activePrefixes) {
+  if (!activePrefixes || activePrefixes.size === 0) {
+    return false;
+  }
+  const lastOpen = text.lastIndexOf("{{", index);
+  if (lastOpen === -1) {
+    return false;
+  }
+  const lastClose = text.lastIndexOf("}}", index);
+  if (lastClose > lastOpen) {
+    return false;
+  }
+  const nextClose = text.indexOf("}}", index);
+  if (nextClose === -1) {
+    return false;
+  }
+  const content = text.slice(lastOpen + 2, nextClose);
+  const match = content.match(/^(?:[a-z0-9]+:)?([A-Z0-9_]+):\d+$/i);
+  if (!match) {
+    return false;
+  }
+  const label = match[1].toUpperCase();
+  return activePrefixes.has(label);
+}
 function mergeRulesWithPriority(baseRules2, textDictRules) {
   if (!textDictRules || textDictRules.length === 0) {
     return baseRules2;
@@ -2265,7 +2311,7 @@ function mergeRulesWithPriority(baseRules2, textDictRules) {
   result.push(...priority5);
   return result;
 }
-function applyRule(text, rule, placeholders, counts) {
+function applyRule(text, rule, placeholders, counts, activePrefixes = null) {
   if (!rule.pattern) {
     return text;
   }
@@ -2273,7 +2319,10 @@ function applyRule(text, rule, placeholders, counts) {
   const regex = rule._compiledRegex || (rule._compiledRegex = buildRuleRegex(rule));
   let hits = 0;
   const placeholderKey = rule.isTextDictionary && rule.groupKey ? rule.groupKey : rule.name;
-  const replaced = text.replace(regex, (match) => {
+  const replaced = text.replace(regex, (match, offset, source) => {
+    if (isActivePlaceholderAt(source, offset, activePrefixes)) {
+      return match;
+    }
     hits += 1;
     return placeholders.get(placeholderKey, match, rule.prefix, numberWidth);
   });
@@ -2391,21 +2440,22 @@ function maskTextSync(source, buildDictionaryRules2, buildAddressRules2, buildTe
     if (dictRules === null) {
       return false;
     }
-    dictRules.forEach((dictRule) => {
-      result = applyRule(result, dictRule, placeholders, counts);
-    });
+    const textDictRules = buildTextDictionaryRules2 ? buildTextDictionaryRules2() : [];
     const addressRules = buildAddressRules2();
+    const activePrefixes = collectActivePrefixes(dictRules, addressRules, textDictRules);
+    dictRules.forEach((dictRule) => {
+      result = applyRule(result, dictRule, placeholders, counts, activePrefixes);
+    });
     addressRules.forEach((addressRule) => {
-      result = applyRule(result, addressRule, placeholders, counts);
+      result = applyRule(result, addressRule, placeholders, counts, activePrefixes);
     });
     result = applyAddressBlockRules(result, placeholders, counts);
-    const textDictRules = buildTextDictionaryRules2 ? buildTextDictionaryRules2() : [];
     const mergedRules = mergeRulesWithPriority(state.rules, textDictRules);
     mergedRules.forEach((rule) => {
       if (!rule.enabled) {
         return;
       }
-      result = applyRule(result, rule, placeholders, counts);
+      result = applyRule(result, rule, placeholders, counts, activePrefixes);
     });
     ui.outputText.value = result;
     renderStats(counts);
@@ -2439,29 +2489,30 @@ async function maskTextAsync(source, runId, buildDictionaryRules2, buildAddressR
     if (dictRules === null) {
       return;
     }
+    const textDictRules = buildTextDictionaryRules2 ? buildTextDictionaryRules2() : [];
+    const addressRules = buildAddressRules2();
+    const activePrefixes = collectActivePrefixes(dictRules, addressRules, textDictRules);
     for (const dictRule of dictRules) {
-      result = applyRule(result, dictRule, placeholders, counts);
+      result = applyRule(result, dictRule, placeholders, counts, activePrefixes);
       if (shouldYield) {
         await yieldToBrowser();
         if (!isLatest()) return;
       }
     }
-    const addressRules = buildAddressRules2();
     for (const addressRule of addressRules) {
-      result = applyRule(result, addressRule, placeholders, counts);
+      result = applyRule(result, addressRule, placeholders, counts, activePrefixes);
       if (shouldYield) {
         await yieldToBrowser();
         if (!isLatest()) return;
       }
     }
     result = applyAddressBlockRules(result, placeholders, counts);
-    const textDictRules = buildTextDictionaryRules2 ? buildTextDictionaryRules2() : [];
     const mergedRules = mergeRulesWithPriority(state.rules, textDictRules);
     for (const rule of mergedRules) {
       if (!rule.enabled) {
         continue;
       }
-      result = applyRule(result, rule, placeholders, counts);
+      result = applyRule(result, rule, placeholders, counts, activePrefixes);
       if (shouldYield) {
         await yieldToBrowser();
         if (!isLatest()) return;
