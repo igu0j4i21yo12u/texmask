@@ -2278,6 +2278,10 @@ function applyRule(text, rule, placeholders, counts) {
   });
   if (hits) {
     counts[rule.name] = (counts[rule.name] || 0) + hits;
+    if (rule.isTextDictionary) {
+      const label = rule.customLabel || `Custom_${rule.label}`;
+      counts[`text_dict_label:${label}`] = (counts[`text_dict_label:${label}`] || 0) + hits;
+    }
   }
   return replaced;
 }
@@ -2338,11 +2342,16 @@ function renderStats(counts) {
   for (const [key, count] of Object.entries(counts)) {
     const isBaseRule = state.rules.some((rule) => rule.name === key);
     if (!isBaseRule) {
+      if (key.startsWith("text_dict_")) {
+        continue;
+      }
       let label = key;
       if (key.startsWith("dictionary_")) {
         label = "辞書";
       } else if (key.startsWith("address_")) {
         label = "住所";
+      } else if (key.startsWith("text_dict_label:")) {
+        label = key.replace("text_dict_label:", "");
       }
       allEntries.push(`${label}: ${count}`);
     }
@@ -2647,6 +2656,9 @@ function buildTextDictionaryRules() {
   const rules = [];
   const enabledDicts = textDictionaries.filter((d) => d.enabled);
   enabledDicts.forEach((dict, index) => {
+    const normalizedLabel = dict.label.trim().replace(/\s+/g, "_").toUpperCase();
+    const prefix = normalizedLabel.startsWith("CUSTOM_") ? normalizedLabel : `CUSTOM_${normalizedLabel}`;
+    const customLabel = `Custom_${normalizedLabel}`;
     dict.entries.forEach((entry, entryIndex) => {
       const pattern = escapeRegExp(entry);
       rules.push({
@@ -2658,7 +2670,8 @@ function buildTextDictionaryRules() {
         textDictId: dict.id,
         priority: dict.priority,
         orderInPriority: dict.orderInPriority,
-        prefix: dict.label.toUpperCase()
+        prefix,
+        customLabel
       });
     });
   });
