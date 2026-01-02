@@ -78,6 +78,7 @@ const ui = {
   tabs: document.querySelectorAll(".tab"),
   tabPanels: document.querySelectorAll(".tab-panel"),
   useAddressDict: document.getElementById("useAddressDict"),
+  useAddressBlock: document.getElementById("useAddressBlock"),
   addressDictVersion: document.getElementById("addressDictVersion"),
   addressDictSource: document.getElementById("addressDictSource"),
   addressDictCount: document.getElementById("addressDictCount"),
@@ -2344,6 +2345,13 @@ function applyRule(text, rule, placeholders, counts, activePrefixes = null, sess
   return replaced;
 }
 function applyAddressBlockRules(text, placeholders, counts) {
+  var _a;
+  if (!((_a = ui.useAddressDict) == null ? void 0 : _a.checked)) {
+    return text;
+  }
+  if (ui.useAddressBlock && !ui.useAddressBlock.checked) {
+    return text;
+  }
   if (!addressPatternChunks.length) {
     return text;
   }
@@ -3315,6 +3323,9 @@ function init() {
   );
   if (ui.useAddressDict) {
     ui.useAddressDict.addEventListener("change", scheduleMask);
+  }
+  if (ui.useAddressBlock) {
+    ui.useAddressBlock.addEventListener("change", scheduleMask);
   }
   if (ui.updateAddressDict) {
     ui.updateAddressDict.addEventListener(
