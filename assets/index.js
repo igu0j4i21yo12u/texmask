@@ -2653,6 +2653,7 @@ function buildTextDictionaryRules() {
         name: `text_dict_${dict.id}_${entryIndex}`,
         label: dict.label,
         pattern,
+        enabled: dict.enabled,
         isTextDictionary: true,
         textDictId: dict.id,
         priority: dict.priority,
