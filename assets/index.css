@@ -83,6 +83,11 @@ a:hover {
   max-width: 100%;
   color: var(--muted);
   margin: 0;
+  line-height: 1.5;
+  white-space: normal;
+}
+
+.masthead .lede {
   white-space: pre-line;
 }
 
