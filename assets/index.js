@@ -2272,15 +2272,17 @@ function applyRule(text, rule, placeholders, counts) {
   const numberWidth = DEFAULT_NUMBER_WIDTH;
   const regex = rule._compiledRegex || (rule._compiledRegex = buildRuleRegex(rule));
   let hits = 0;
+  const placeholderKey = rule.isTextDictionary && rule.groupKey ? rule.groupKey : rule.name;
   const replaced = text.replace(regex, (match) => {
     hits += 1;
-    return placeholders.get(rule.name, match, rule.prefix, numberWidth);
+    return placeholders.get(placeholderKey, match, rule.prefix, numberWidth);
   });
   if (hits) {
-    counts[rule.name] = (counts[rule.name] || 0) + hits;
     if (rule.isTextDictionary) {
       const label = rule.customLabel || `Custom_${rule.label}`;
       counts[`text_dict_label:${label}`] = (counts[`text_dict_label:${label}`] || 0) + hits;
+    } else {
+      counts[rule.name] = (counts[rule.name] || 0) + hits;
     }
   }
   return replaced;
@@ -2659,6 +2661,7 @@ function buildTextDictionaryRules() {
     const normalizedLabel = dict.label.trim().replace(/\s+/g, "_").toUpperCase();
     const prefix = normalizedLabel.startsWith("CUSTOM_") ? normalizedLabel : `CUSTOM_${normalizedLabel}`;
     const customLabel = `Custom_${normalizedLabel}`;
+    const groupKey = `text_dict_label:${customLabel}`;
     dict.entries.forEach((entry, entryIndex) => {
       const pattern = escapeRegExp(entry);
       rules.push({
@@ -2671,7 +2674,8 @@ function buildTextDictionaryRules() {
         priority: dict.priority,
         orderInPriority: dict.orderInPriority,
         prefix,
-        customLabel
+        customLabel,
+        groupKey
       });
     });
   });
