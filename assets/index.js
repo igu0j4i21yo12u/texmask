@@ -2261,15 +2261,18 @@ function isActivePlaceholderAt(text, index, activePrefixes, sessionId) {
     return false;
   }
   const content = text.slice(lastOpen + 2, nextClose);
-  const match = content.match(/^([a-z0-9]+):([A-Z0-9_]+):\d+$/i);
-  if (!match) {
+  const parts = content.split(":");
+  if (parts.length !== 3) {
     return false;
   }
-  const placeholderSession = match[1];
+  const placeholderSession = parts[0];
   if (placeholderSession !== sessionId) {
     return false;
   }
-  const label = match[2].toUpperCase();
+  const label = parts[1].toUpperCase();
+  if (!/^\d+$/.test(parts[2])) {
+    return false;
+  }
   return activePrefixes.has(label);
 }
 function mergeRulesWithPriority(baseRules2, textDictRules) {
