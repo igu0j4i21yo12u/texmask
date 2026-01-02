@@ -120,6 +120,12 @@ MIT License - 詳細は [LICENSE](LICENSE) をご覧ください。
 
 ---
 
+## バージョン
+
+1.3.1
+
+---
+
 ## クレジット
 
 - 住所辞書データ: [Geolonia 住所データ](https://github.com/geolonia/japanese-addresses) (CC BY 4.0)
