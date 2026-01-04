@@ -216,6 +216,7 @@ const TEXT_DICT_KEY = "masking-web-text-dict-v1";
 const ADDRESS_DICT_LOCAL_URL = "data/address-dict.json";
 const ADDRESS_TOWN_DICT_URL = "data/address-town-dict.json";
 const GEOLONIA_API_URL = "https://geolonia.github.io/japanese-addresses/api/ja.json";
+const ASYNC_MASK_THRESHOLD = 2e4;
 const COPY_FEEDBACK_DURATION_MS = 1200;
 const SESSION_ID_LENGTH = 4;
 const ADDRESS_PATTERN_CHUNK_SIZE = 2e3;
@@ -662,6 +663,57 @@ function normalizeRegexPattern(pattern) {
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+function buildRuleRegex(rule) {
+  const normalized = normalizeRegexPattern(rule.pattern);
+  return new RegExp(normalized.value, normalized.flags);
+}
+function formatCount(value, width) {
+  const raw = String(value);
+  if (!width || width <= raw.length) {
+    return raw;
+  }
+  return raw.padStart(width, "0");
+}
+class PlaceholderMap {
+  constructor(sessionId, includeSessionId) {
+    this.dictionaryId = sessionId;
+    this.includeSessionId = Boolean(includeSessionId);
+    this.sessionId = this.includeSessionId ? this.dictionaryId : "";
+    this.maps = {};
+    this.counts = {};
+  }
+  get(key, raw, prefix, width) {
+    if (!this.maps[key]) {
+      this.maps[key] = {};
+      this.counts[key] = 0;
+    }
+    const bucket = this.maps[key];
+    if (bucket[raw]) {
+      return bucket[raw];
+    }
+    this.counts[key] += 1;
+    const suffix = `${prefix}:${formatCount(this.counts[key], width)}`;
+    const value = this.includeSessionId ? `{{${this.sessionId}:${suffix}}}` : `{{${suffix}}}`;
+    bucket[raw] = value;
+    return value;
+  }
+  getDictionary() {
+    const mappings = {};
+    for (const key in this.maps) {
+      const bucket = this.maps[key];
+      for (const original in bucket) {
+        const masked = bucket[original];
+        mappings[masked] = original;
+      }
+    }
+    return {
+      version: "1.0",
+      session_id: this.includeSessionId ? this.sessionId : "",
+      created_at: (/* @__PURE__ */ new Date()).toISOString(),
+      mappings
+    };
+  }
+}
 function buildDictionarySignaturePayload(dictionary) {
   if (!dictionary || typeof dictionary !== "object") {
     return null;
@@ -733,7 +785,7 @@ function getUnmaskSource() {
 function getUnmaskTarget() {
   return ui.inputText;
 }
-function unmaskText$1(dictionary) {
+function unmaskText(dictionary) {
   const source = getUnmaskSource();
   const target = getUnmaskTarget();
   if (!source || !target) {
@@ -805,7 +857,7 @@ function loadUnmaskTextFile(file) {
       source.value = content;
     }
     if (currentUnmaskDictionary) {
-      unmaskText$1(currentUnmaskDictionary);
+      unmaskText(currentUnmaskDictionary);
     }
   };
   reader.onerror = () => {
@@ -831,7 +883,7 @@ async function loadDictionaryFile(file) {
         }
       }
       setCurrentUnmaskDictionary(data);
-      unmaskText$1(data);
+      unmaskText(data);
       updateUnmaskDictStatus(data);
       updateUnmaskStatusDisplay("辞書を読み込みました。");
     } catch (err) {
@@ -2279,6 +2331,7 @@ function initializeEventListeners(ui2, callbacks) {
     setPresetPanelOpen: setPresetPanelOpen2,
     updateSessionIdControls: updateSessionIdControls2,
     initUnmaskFeatures: initUnmaskFeatures2,
+    unmaskText: unmaskText2,
     stateVars: stateVars2,
     baseRules: baseRules2,
     renderRules: renderRules2,
@@ -2290,7 +2343,7 @@ function initializeEventListeners(ui2, callbacks) {
   }
   if (ui2.unmaskBackwardBtn) {
     ui2.unmaskBackwardBtn.addEventListener("click", () => {
-      unmaskText(stateVars2.currentUnmaskDictionary);
+      unmaskText2(stateVars2.currentUnmaskDictionary);
     });
   }
   if (ui2.copyBtn) {
@@ -2462,6 +2515,352 @@ function initializeEventListeners(ui2, callbacks) {
       setPresetPanelOpen2(false);
     });
   }
+}
+const ADDRESS_BLOCK_PATTERN = "(?:[0-9０-９一二三四五六七八九十百千〇零]{1,3}丁目s*[0-9０-９一二三四五六七八九十百千〇零]{1,3}番s*[0-9０-９一二三四五六七八九十百千〇零]{1,3}号?|[0-9０-９一二三四五六七八九十百千〇零]{1,3}丁目s*[0-9０-９一二三四五六七八九十百千〇零]{1,3}(?:番|号)|[0-9０-９一二三四五六七八九十百千〇零]{1,3}丁目|[東西南北]?[0-9０-９一二三四五六七八九十百千〇零]{1,3}条[東西南北]?[0-9０-９一二三四五六七八九十百千〇零]{1,3}丁目?|[0-9０-９一二三四五六七八九十百千〇零]{1,3}(?:[-‐ー－]|の)[0-9０-９一二三四五六七八九十百千〇零]{1,3}(?:(?:[-‐ー－]|の)[0-9０-９一二三四五六七八九十百千〇零]{1,3})?)(?![0-9０-９])";
+const DEFAULT_NUMBER_WIDTH = 3;
+function collectActivePrefixes(dictRules, addressRules, textDictRules) {
+  const prefixes = /* @__PURE__ */ new Set();
+  const add = (value) => {
+    if (!value) {
+      return;
+    }
+    prefixes.add(String(value).toUpperCase());
+  };
+  state.rules.forEach((rule) => {
+    if (rule.enabled) {
+      add(rule.prefix);
+    }
+  });
+  dictRules.forEach((rule) => add(rule.prefix));
+  addressRules.forEach((rule) => add(rule.prefix));
+  textDictRules.forEach((rule) => add(rule.prefix));
+  if (addressRules.length) {
+    add("ADDRESS_BLOCK");
+    add("ADDRESS_MID");
+  }
+  return prefixes;
+}
+function isActivePlaceholderAt(text, index, activePrefixes, sessionId) {
+  if (!activePrefixes || activePrefixes.size === 0 || !sessionId) {
+    return false;
+  }
+  const lastOpen = text.lastIndexOf("{{", index);
+  if (lastOpen === -1) {
+    return false;
+  }
+  const lastClose = text.lastIndexOf("}}", index);
+  if (lastClose > lastOpen) {
+    return false;
+  }
+  const nextClose = text.indexOf("}}", index);
+  if (nextClose === -1) {
+    return false;
+  }
+  const content = text.slice(lastOpen + 2, nextClose);
+  const parts = content.split(":");
+  if (parts.length !== 3) {
+    return false;
+  }
+  const placeholderSession = parts[0];
+  if (placeholderSession !== sessionId) {
+    return false;
+  }
+  const label = parts[1].toUpperCase();
+  if (!/^\d+$/.test(parts[2])) {
+    return false;
+  }
+  return activePrefixes.has(label);
+}
+function mergeRulesWithPriority(baseRules2, textDictRules) {
+  if (!textDictRules || textDictRules.length === 0) {
+    return baseRules2;
+  }
+  const result = [];
+  const baseRulesCount = baseRules2.length;
+  const priority1 = [];
+  const priority2 = [];
+  const priority3 = [];
+  const priority4 = [];
+  const priority5 = [];
+  textDictRules.forEach((rule) => {
+    if (rule.priority === 1) priority1.push(rule);
+    else if (rule.priority === 2) priority2.push(rule);
+    else if (rule.priority === 3) priority3.push(rule);
+    else if (rule.priority === 4) priority4.push(rule);
+    else if (rule.priority === 5) priority5.push(rule);
+  });
+  const sortByOrder = (a, b) => a.orderInPriority - b.orderInPriority;
+  priority1.sort(sortByOrder);
+  priority2.sort(sortByOrder);
+  priority3.sort(sortByOrder);
+  priority4.sort(sortByOrder);
+  priority5.sort(sortByOrder);
+  result.push(...priority1);
+  const pos75 = Math.floor(baseRulesCount * 0.75);
+  const pos50 = Math.floor(baseRulesCount * 0.5);
+  const pos25 = Math.floor(baseRulesCount * 0.25);
+  for (let i = 0; i < baseRulesCount; i++) {
+    if (i === pos75 && priority2.length > 0) {
+      result.push(...priority2);
+    }
+    if (i === pos50 && priority3.length > 0) {
+      result.push(...priority3);
+    }
+    if (i === pos25 && priority4.length > 0) {
+      result.push(...priority4);
+    }
+    result.push(baseRules2[i]);
+  }
+  result.push(...priority5);
+  return result;
+}
+function applyRule(text, rule, placeholders, counts, activePrefixes = null, sessionId = null) {
+  if (!rule.pattern) {
+    return text;
+  }
+  const numberWidth = DEFAULT_NUMBER_WIDTH;
+  const regex = rule._compiledRegex || (rule._compiledRegex = buildRuleRegex(rule));
+  let hits = 0;
+  const placeholderKey = rule.isTextDictionary && rule.groupKey ? rule.groupKey : rule.name;
+  const replaced = text.replace(regex, (match, offset, source) => {
+    if (isActivePlaceholderAt(source, offset, activePrefixes, sessionId)) {
+      return match;
+    }
+    hits += 1;
+    return placeholders.get(placeholderKey, match, rule.prefix, numberWidth);
+  });
+  if (hits) {
+    if (rule.isTextDictionary) {
+      const label = rule.customLabel || `Custom_${rule.label}`;
+      counts[`text_dict_label:${label}`] = (counts[`text_dict_label:${label}`] || 0) + hits;
+    } else {
+      counts[rule.name] = (counts[rule.name] || 0) + hits;
+    }
+  }
+  return replaced;
+}
+function applyAddressBlockRules(text, placeholders, counts) {
+  var _a;
+  if (!((_a = ui.useAddressDict) == null ? void 0 : _a.checked)) {
+    return text;
+  }
+  if (ui.useAddressBlock && !ui.useAddressBlock.checked) {
+    return text;
+  }
+  if (!addressPatternChunks.length) {
+    return text;
+  }
+  const numberWidth = DEFAULT_NUMBER_WIDTH;
+  const blockRegex = new RegExp(ADDRESS_BLOCK_PATTERN, "g");
+  const chunkRegexes = addressPatternChunks.map((chunk) => new RegExp(chunk));
+  const addressPlaceholderRegex = /\{\{[^}]*:ADDRESS:\d+\}\}/;
+  const lines = text.split(/\r?\n/);
+  let changed = false;
+  const updated = lines.map((line) => {
+    if (!line.includes("所在地") && !line.includes("所在地：") && !line.includes("所在地:")) {
+      return line;
+    }
+    const hasRegion = addressPlaceholderRegex.test(line) || chunkRegexes.some((regex) => regex.test(line));
+    if (!hasRegion) {
+      return line;
+    }
+    let hits = 0;
+    const replaced = line.replace(blockRegex, (match) => {
+      hits += 1;
+      return placeholders.get(
+        "address_block",
+        match,
+        "ADDRESS_BLOCK",
+        numberWidth
+      );
+    });
+    const normalized = replaced.replace(/(\{\{[^}]*:ZIP:\d+\}\})\s+(?=\{\{[^}]*:ADDRESS:\d+\}\})/g, "$1").replace(
+      /(\{\{[^}]*:ADDRESS:\d+\}\})([^\s\{]{1,30})(\{\{[^}]*:ADDRESS_BLOCK:\d+\}\})/g,
+      (match, head, middle, tail) => {
+        const masked = placeholders.get(
+          "address_mid",
+          middle,
+          "ADDRESS_MID",
+          numberWidth
+        );
+        counts.address_mid = (counts.address_mid || 0) + 1;
+        return `${head}${masked}${tail}`;
+      }
+    );
+    if (hits) {
+      counts.address_block = (counts.address_block || 0) + hits;
+      changed = true;
+    }
+    return normalized;
+  });
+  return changed ? updated.join("\n") : text;
+}
+function renderStats(counts) {
+  const allEntries = [];
+  state.rules.filter((rule) => counts[rule.name]).forEach((rule) => {
+    allEntries.push(`${rule.label}: ${counts[rule.name]}`);
+  });
+  for (const [key, count] of Object.entries(counts)) {
+    const isBaseRule = state.rules.some((rule) => rule.name === key);
+    if (!isBaseRule) {
+      if (key.startsWith("text_dict_")) {
+        continue;
+      }
+      let label = key;
+      if (key.startsWith("dictionary_")) {
+        label = "辞書";
+      } else if (key.startsWith("address_")) {
+        label = "住所";
+      } else if (key.startsWith("text_dict_label:")) {
+        label = key.replace("text_dict_label:", "");
+      }
+      allEntries.push(`${label}: ${count}`);
+    }
+  }
+  const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
+  const breakdown = allEntries.length ? allEntries.join(" / ") : "なし";
+  updateStatusDisplay(`総マスク数: ${total} （内訳: ${breakdown}）`);
+}
+async function attachDictionarySignature(dict) {
+  if (!computeDictionarySignature || !dict) {
+    return;
+  }
+  const signature = await computeDictionarySignature(dict);
+  if (!signature) {
+    return;
+  }
+  dict.signature = signature;
+  setCurrentMaskDictionary(dict);
+  setCurrentUnmaskDictionary(dict);
+  if (typeof window.updateUnmaskDictStatus === "function") {
+    window.updateUnmaskDictStatus(dict);
+  }
+}
+function maskTextSync(source, buildDictionaryRules2, buildAddressRules2, buildTextDictionaryRules2) {
+  var _a;
+  if (!currentSessionId) {
+    setCurrentSessionId(generateSessionId());
+  }
+  const includeSessionId = ((_a = ui.useRandomSessionId) == null ? void 0 : _a.checked) ?? true;
+  const placeholders = new PlaceholderMap(currentSessionId, includeSessionId);
+  const counts = {};
+  let result = source;
+  try {
+    const dictRules = buildDictionaryRules2();
+    if (dictRules === null) {
+      return false;
+    }
+    const textDictRules = buildTextDictionaryRules2 ? buildTextDictionaryRules2() : [];
+    const addressRules = buildAddressRules2();
+    const activePrefixes = collectActivePrefixes(dictRules, addressRules, textDictRules);
+    dictRules.forEach((dictRule) => {
+      result = applyRule(result, dictRule, placeholders, counts, activePrefixes, currentSessionId);
+    });
+    addressRules.forEach((addressRule) => {
+      result = applyRule(result, addressRule, placeholders, counts, activePrefixes, currentSessionId);
+    });
+    result = applyAddressBlockRules(result, placeholders, counts);
+    const mergedRules = mergeRulesWithPriority(state.rules, textDictRules);
+    mergedRules.forEach((rule) => {
+      if (!rule.enabled) {
+        return;
+      }
+      result = applyRule(result, rule, placeholders, counts, activePrefixes, currentSessionId);
+    });
+    ui.outputText.value = result;
+    renderStats(counts);
+    const dict = placeholders.getDictionary();
+    setCurrentMaskDictionary(dict);
+    setCurrentUnmaskDictionary(dict);
+    if (typeof window.updateUnmaskDictStatus === "function") {
+      window.updateUnmaskDictStatus(dict);
+    }
+    attachDictionarySignature(dict);
+    return true;
+  } catch (err) {
+    updateStatusDisplay("正規表現の形式が不正です。", true);
+    return false;
+  }
+}
+async function maskTextAsync(source, runId, buildDictionaryRules2, buildAddressRules2, buildTextDictionaryRules2) {
+  var _a;
+  const shouldYield = source.length > ASYNC_MASK_THRESHOLD;
+  const yieldToBrowser = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const isLatest = () => runId === maskRunId;
+  if (!currentSessionId) {
+    setCurrentSessionId(generateSessionId());
+  }
+  const includeSessionId = ((_a = ui.useRandomSessionId) == null ? void 0 : _a.checked) ?? true;
+  const placeholders = new PlaceholderMap(currentSessionId, includeSessionId);
+  const counts = {};
+  let result = source;
+  try {
+    const dictRules = buildDictionaryRules2();
+    if (dictRules === null) {
+      return;
+    }
+    const textDictRules = buildTextDictionaryRules2 ? buildTextDictionaryRules2() : [];
+    const addressRules = buildAddressRules2();
+    const activePrefixes = collectActivePrefixes(dictRules, addressRules, textDictRules);
+    for (const dictRule of dictRules) {
+      result = applyRule(result, dictRule, placeholders, counts, activePrefixes, currentSessionId);
+      if (shouldYield) {
+        await yieldToBrowser();
+        if (!isLatest()) return;
+      }
+    }
+    for (const addressRule of addressRules) {
+      result = applyRule(result, addressRule, placeholders, counts, activePrefixes, currentSessionId);
+      if (shouldYield) {
+        await yieldToBrowser();
+        if (!isLatest()) return;
+      }
+    }
+    result = applyAddressBlockRules(result, placeholders, counts);
+    const mergedRules = mergeRulesWithPriority(state.rules, textDictRules);
+    for (const rule of mergedRules) {
+      if (!rule.enabled) {
+        continue;
+      }
+      result = applyRule(result, rule, placeholders, counts, activePrefixes, currentSessionId);
+      if (shouldYield) {
+        await yieldToBrowser();
+        if (!isLatest()) return;
+      }
+    }
+    if (!isLatest()) return;
+    ui.outputText.value = result;
+    renderStats(counts);
+    const dict = placeholders.getDictionary();
+    setCurrentMaskDictionary(dict);
+    setCurrentUnmaskDictionary(dict);
+    if (typeof window.updateUnmaskDictStatus === "function") {
+      window.updateUnmaskDictStatus(dict);
+    }
+    attachDictionarySignature(dict);
+  } catch (err) {
+    updateStatusDisplay("正規表現の形式が不正です。", true);
+  }
+}
+function maskText(buildDictionaryRules2, buildAddressRules2, buildTextDictionaryRules2) {
+  const source = ui.inputText.value || "";
+  const runId = incrementMaskRunId();
+  if (!source.trim()) {
+    ui.outputText.value = "";
+    updateStatusDisplay("入力テキストが空です。");
+    setCurrentMaskDictionary(null);
+    setCurrentUnmaskDictionary(null);
+    if (typeof window.updateUnmaskDictStatus === "function") {
+      window.updateUnmaskDictStatus(null);
+    }
+    return;
+  }
+  if (source.length > ASYNC_MASK_THRESHOLD) {
+    updateStatusDisplay("マスク処理中...");
+    maskTextAsync(source, runId, buildDictionaryRules2, buildAddressRules2, buildTextDictionaryRules2);
+    return;
+  }
+  maskTextSync(source, buildDictionaryRules2, buildAddressRules2, buildTextDictionaryRules2);
 }
 function scheduleMask() {
   return;
@@ -3068,6 +3467,7 @@ function init() {
     setPresetPanelOpen: (isOpen) => setPresetPanelOpen(isOpen, ui),
     updateSessionIdControls,
     initUnmaskFeatures,
+    unmaskText,
     stateVars,
     baseRules,
     renderRules,
