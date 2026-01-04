@@ -133,23 +133,24 @@ function updatePresetStatusDisplay(message, isError = false) {
   ui.presetStatus.classList.toggle("error", isError);
 }
 const brandConfig = {
-  productName: "TextMasker",
-  pageTitle: "TextMasker - 簡単秘匿情報マスキング",
-  logoText: "TextMasker",
-  eyebrow: "簡単秘匿情報マスキング",
+  productName: "TexMask",
+  pageTitle: "TexMask - ブラウザで楽々マスキング！",
+  logoText: "TexMask",
+  eyebrow: "ブラウザで楽々マスキング！",
   ledeLines: [
-    "業務で扱う機密情報を、ブラウザ内で安全にマスキングします。",
+    "AIに秘匿情報を送ったりしていませんか？",
+    "このツールで秘匿化してから送ったほうが安心ですよ！",
     "外部へのデータ送信は行っておりませんので、ローカルにダウンロードすればインターネット接続がなくても動作します。"
   ],
-  demoUrl: "https://igs-service.github.io/textmasker/",
+  demoUrl: "https://igu0j4i21yo12u.github.io/texmask/",
   demoLabel: "デモサイト（ブラウザで試す）",
-  repoUrl: "https://github.com/igs-service/textmasker",
+  repoUrl: "https://github.com/igu0j4i21yo12u/texmask",
   repoLabel: "GitHubから取得",
-  zipUrl: "https://github.com/igs-service/textmasker/releases/latest/download/TextMasker-latest.zip",
+  zipUrl: "https://github.com/igu0j4i21yo12u/texmask/releases/latest/download/TexMask-latest.zip",
   zipLabel: "ZIPでダウンロード",
-  footerText: "IGS LLC.",
-  footerLinkUrl: "https://github.com/igs-service",
-  footerLinkLabel: "TextMasker"
+  footerText: "Copyrights 2026 igu0j4i21yo12u",
+  footerLinkUrl: "https://x.com/igu0j4i21yo12u",
+  footerLinkLabel: "(X Account)"
 };
 function getBrandConfig() {
   return brandConfig || {};
@@ -215,7 +216,6 @@ const TEXT_DICT_KEY = "masking-web-text-dict-v1";
 const ADDRESS_DICT_LOCAL_URL = "data/address-dict.json";
 const ADDRESS_TOWN_DICT_URL = "data/address-town-dict.json";
 const GEOLONIA_API_URL = "https://geolonia.github.io/japanese-addresses/api/ja.json";
-const ASYNC_MASK_THRESHOLD = 2e4;
 const COPY_FEEDBACK_DURATION_MS = 1200;
 const SESSION_ID_LENGTH = 4;
 const ADDRESS_PATTERN_CHUNK_SIZE = 2e3;
@@ -420,6 +420,71 @@ function incrementMaskRunId() {
 function setTextDictionaries(value) {
   textDictionaries = value;
 }
+const stateVars = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  get addressCityPatterns() {
+    return addressCityPatterns;
+  },
+  get addressCityPatternsByPref() {
+    return addressCityPatternsByPref;
+  },
+  get addressDictLoadPromise() {
+    return addressDictLoadPromise;
+  },
+  get addressPatternChunks() {
+    return addressPatternChunks;
+  },
+  get addressPatterns() {
+    return addressPatterns;
+  },
+  get addressSelectedPrefs() {
+    return addressSelectedPrefs;
+  },
+  get addressTownDictLoadPromise() {
+    return addressTownDictLoadPromise;
+  },
+  get addressTownPatternsByPref() {
+    return addressTownPatternsByPref;
+  },
+  get addressTownPrefectures() {
+    return addressTownPrefectures;
+  },
+  applyStatePayload,
+  buildPresetPayload,
+  buildStatePayload,
+  get currentMaskDictionary() {
+    return currentMaskDictionary;
+  },
+  get currentSessionId() {
+    return currentSessionId;
+  },
+  get currentUnmaskDictionary() {
+    return currentUnmaskDictionary;
+  },
+  incrementMaskRunId,
+  get maskRunId() {
+    return maskRunId;
+  },
+  persistState,
+  restoreState,
+  setAddressCityPatterns,
+  setAddressCityPatternsByPref,
+  setAddressDictLoadPromise,
+  setAddressPatternChunks,
+  setAddressPatterns,
+  setAddressSelectedPrefs,
+  setAddressTownDictLoadPromise,
+  setAddressTownPatternsByPref,
+  setAddressTownPrefectures,
+  setCurrentMaskDictionary,
+  setCurrentSessionId,
+  setCurrentUnmaskDictionary,
+  setTextDictionaries,
+  state,
+  get textDictionaries() {
+    return textDictionaries;
+  }
+}, Symbol.toStringTag, { value: "Module" }));
 function sanitizeFileName(name) {
   return name.replace(/[\\/:*?"<>|]/g, "_").trim() || "config";
 }
@@ -597,57 +662,6 @@ function normalizeRegexPattern(pattern) {
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
-function buildRuleRegex(rule) {
-  const normalized = normalizeRegexPattern(rule.pattern);
-  return new RegExp(normalized.value, normalized.flags);
-}
-function formatCount(value, width) {
-  const raw = String(value);
-  if (!width || width <= raw.length) {
-    return raw;
-  }
-  return raw.padStart(width, "0");
-}
-class PlaceholderMap {
-  constructor(sessionId, includeSessionId) {
-    this.dictionaryId = sessionId;
-    this.includeSessionId = Boolean(includeSessionId);
-    this.sessionId = this.includeSessionId ? this.dictionaryId : "";
-    this.maps = {};
-    this.counts = {};
-  }
-  get(key, raw, prefix, width) {
-    if (!this.maps[key]) {
-      this.maps[key] = {};
-      this.counts[key] = 0;
-    }
-    const bucket = this.maps[key];
-    if (bucket[raw]) {
-      return bucket[raw];
-    }
-    this.counts[key] += 1;
-    const suffix = `${prefix}:${formatCount(this.counts[key], width)}`;
-    const value = this.includeSessionId ? `{{${this.sessionId}:${suffix}}}` : `{{${suffix}}}`;
-    bucket[raw] = value;
-    return value;
-  }
-  getDictionary() {
-    const mappings = {};
-    for (const key in this.maps) {
-      const bucket = this.maps[key];
-      for (const original in bucket) {
-        const masked = bucket[original];
-        mappings[masked] = original;
-      }
-    }
-    return {
-      version: "1.0",
-      session_id: this.includeSessionId ? this.sessionId : "",
-      created_at: (/* @__PURE__ */ new Date()).toISOString(),
-      mappings
-    };
-  }
-}
 function buildDictionarySignaturePayload(dictionary) {
   if (!dictionary || typeof dictionary !== "object") {
     return null;
@@ -719,7 +733,7 @@ function getUnmaskSource() {
 function getUnmaskTarget() {
   return ui.inputText;
 }
-function unmaskText(dictionary) {
+function unmaskText$1(dictionary) {
   const source = getUnmaskSource();
   const target = getUnmaskTarget();
   if (!source || !target) {
@@ -791,7 +805,7 @@ function loadUnmaskTextFile(file) {
       source.value = content;
     }
     if (currentUnmaskDictionary) {
-      unmaskText(currentUnmaskDictionary);
+      unmaskText$1(currentUnmaskDictionary);
     }
   };
   reader.onerror = () => {
@@ -817,7 +831,7 @@ async function loadDictionaryFile(file) {
         }
       }
       setCurrentUnmaskDictionary(data);
-      unmaskText(data);
+      unmaskText$1(data);
       updateUnmaskDictStatus(data);
       updateUnmaskStatusDisplay("辞書を読み込みました。");
     } catch (err) {
@@ -1412,6 +1426,7 @@ function toggleAllRules(readDictRows2, scheduleMask2) {
   state.rules = state.rules.map((rule) => ({ ...rule, enabled: shouldEnable }));
   renderRules(readDictRows2, scheduleMask2);
   persistState(readDictRows2);
+  if (scheduleMask2) scheduleMask2();
 }
 function resetRuleOrder(readDictRows2, scheduleMask2) {
   state.rules = baseRules.map((rule) => {
@@ -1423,6 +1438,7 @@ function resetRuleOrder(readDictRows2, scheduleMask2) {
   });
   persistState(readDictRows2);
   renderRules(readDictRows2, scheduleMask2);
+  if (scheduleMask2) scheduleMask2();
 }
 function generateSessionId() {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -1571,6 +1587,7 @@ function addDictRow(entry = {}, scheduleMask2) {
   }
   ui.dictRows.appendChild(createDictRow(entry, scheduleMask2));
   persistState(readDictRows);
+  if (scheduleMask2) scheduleMask2();
 }
 function importBasicRulesToDict(renderRules2, scheduleMask2, savePreset2, buildStatePayload2) {
   const ok = window.confirm(
@@ -1591,6 +1608,7 @@ function importBasicRulesToDict(renderRules2, scheduleMask2, savePreset2, buildS
   state.rules = state.rules.map((rule) => ({ ...rule, enabled: false }));
   if (renderRules2) renderRules2(readDictRows, scheduleMask2);
   persistState(readDictRows);
+  if (scheduleMask2) scheduleMask2();
   updateStatusDisplay("基本設定を辞書へ転記しました。");
 }
 function saveImportBackupPreset(savePreset2, buildStatePayload2) {
@@ -2008,7 +2026,7 @@ function renderAddressSearchResults(query) {
     ui.addressSearchResults.textContent = "辞書を読み込み中...";
     return;
   }
-  const raw = ((_a = ui.addressSearchInput) == null ? void 0 : _a.value) ?? "";
+  const raw = query ?? ((_a = ui.addressSearchInput) == null ? void 0 : _a.value) ?? "";
   const trimmed = raw.trim();
   if (!trimmed) {
     ui.addressSearchResults.textContent = "検索結果はここに表示されます。";
@@ -2197,6 +2215,7 @@ function loadPreset(baseRules2, renderRules2, renderDictRows2, readDictRows2, sc
     renderRules2(readDictRows2, scheduleMask2);
   }
   persistState(readDictRows2);
+  if (scheduleMask2) scheduleMask2();
   updatePresetStatusDisplay("");
 }
 function deletePreset() {
@@ -2221,351 +2240,228 @@ function resolveExportName() {
   }
   return name;
 }
-const ADDRESS_BLOCK_PATTERN = "(?:[0-9０-９一二三四五六七八九十百千〇零]{1,3}丁目s*[0-9０-９一二三四五六七八九十百千〇零]{1,3}番s*[0-9０-９一二三四五六七八九十百千〇零]{1,3}号?|[0-9０-９一二三四五六七八九十百千〇零]{1,3}丁目s*[0-9０-９一二三四五六七八九十百千〇零]{1,3}(?:番|号)|[0-9０-９一二三四五六七八九十百千〇零]{1,3}丁目|[東西南北]?[0-9０-９一二三四五六七八九十百千〇零]{1,3}条[東西南北]?[0-9０-９一二三四五六七八九十百千〇零]{1,3}丁目?|[0-9０-９一二三四五六七八九十百千〇零]{1,3}(?:[-‐ー－]|の)[0-9０-９一二三四五六七八九十百千〇零]{1,3}(?:(?:[-‐ー－]|の)[0-9０-９一二三四五六七八九十百千〇零]{1,3})?)(?![0-9０-９])";
-const DEFAULT_NUMBER_WIDTH = 3;
-function collectActivePrefixes(dictRules, addressRules, textDictRules) {
-  const prefixes = /* @__PURE__ */ new Set();
-  const add = (value) => {
-    if (!value) {
-      return;
-    }
-    prefixes.add(String(value).toUpperCase());
-  };
-  state.rules.forEach((rule) => {
-    if (rule.enabled) {
-      add(rule.prefix);
-    }
+function initializeEventListeners(ui2, callbacks) {
+  const {
+    scheduleMask: scheduleMask2,
+    readDictRows: readDictRows2,
+    maskText: maskText2,
+    regenerateSessionId: regenerateSessionId2,
+    buildDictionaryRules: buildDictionaryRules2,
+    buildAddressRules: buildAddressRules2,
+    buildTextDictionaryRules: buildTextDictionaryRules2,
+    setCurrentMaskDictionary: setCurrentMaskDictionary2,
+    setCurrentUnmaskDictionary: setCurrentUnmaskDictionary2,
+    updateUnmaskDictStatus: updateUnmaskDictStatus2,
+    updateStatusDisplay: updateStatusDisplay2,
+    persistState: persistState2,
+    copyOutput: copyOutput2,
+    clearInput: clearInput2,
+    savePreset: savePreset2,
+    loadPreset: loadPreset2,
+    deletePreset: deletePreset2,
+    exportPresetToFile: exportPresetToFile2,
+    resolveExportName: resolveExportName2,
+    importPresetFromFile: importPresetFromFile2,
+    savePresetWithPayload: savePresetWithPayload2,
+    buildStatePayload: buildStatePayload2,
+    toggleAllRules: toggleAllRules2,
+    resetRuleOrder: resetRuleOrder2,
+    updateAddressDict: updateAddressDict2,
+    resetAddressDict: resetAddressDict2,
+    renderAddressSearchResults: renderAddressSearchResults2,
+    handlePrefectureSelectionChange: handlePrefectureSelectionChange2,
+    setAllPrefecturesSelection: setAllPrefecturesSelection2,
+    loadPlainTextFile: loadPlainTextFile2,
+    saveMaskedOutput: saveMaskedOutput2,
+    savePlainOutput: savePlainOutput2,
+    addDictRow: addDictRow2,
+    importBasicRulesToDict: importBasicRulesToDict2,
+    setPresetPanelOpen: setPresetPanelOpen2,
+    updateSessionIdControls: updateSessionIdControls2,
+    initUnmaskFeatures: initUnmaskFeatures2,
+    stateVars: stateVars2,
+    baseRules: baseRules2,
+    renderRules: renderRules2,
+    renderDictRows: renderDictRows2,
+    SAMPLE_DATA: SAMPLE_DATA2
+  } = callbacks;
+  if (ui2.maskForwardBtn) {
+    ui2.maskForwardBtn.addEventListener("click", () => maskText2(buildDictionaryRules2, buildAddressRules2, buildTextDictionaryRules2));
+  }
+  if (ui2.unmaskBackwardBtn) {
+    ui2.unmaskBackwardBtn.addEventListener("click", () => {
+      unmaskText(stateVars2.currentUnmaskDictionary);
+    });
+  }
+  if (ui2.copyBtn) {
+    ui2.copyBtn.addEventListener("click", copyOutput2);
+  }
+  if (ui2.clearBtn) {
+    ui2.clearBtn.addEventListener("click", clearInput2);
+  }
+  if (ui2.sampleSelect) {
+    ui2.sampleSelect.addEventListener("change", () => {
+      const key = ui2.sampleSelect.value;
+      if (key && SAMPLE_DATA2[key]) {
+        ui2.inputText.value = SAMPLE_DATA2[key];
+        persistState2(readDictRows2);
+      }
+    });
+  }
+  ui2.presetSave.addEventListener(
+    "click",
+    () => savePreset2(readDictRows2)
+  );
+  ui2.presetLoad.addEventListener(
+    "click",
+    () => loadPreset2(
+      baseRules2,
+      renderRules2,
+      renderDictRows2,
+      readDictRows2,
+      scheduleMask2
+    )
+  );
+  ui2.presetDelete.addEventListener("click", deletePreset2);
+  ui2.presetExport.addEventListener(
+    "click",
+    () => exportPresetToFile2(resolveExportName2, readDictRows2)
+  );
+  ui2.presetImport.addEventListener("click", () => ui2.presetImportFile.click());
+  ui2.presetImportFile.addEventListener("change", () => {
+    var _a;
+    importPresetFromFile2(
+      (_a = ui2.presetImportFile.files) == null ? void 0 : _a[0],
+      baseRules2,
+      renderRules2,
+      renderDictRows2,
+      readDictRows2,
+      scheduleMask2
+    );
   });
-  dictRules.forEach((rule) => add(rule.prefix));
-  addressRules.forEach((rule) => add(rule.prefix));
-  textDictRules.forEach((rule) => add(rule.prefix));
-  if (addressRules.length) {
-    add("ADDRESS_BLOCK");
-    add("ADDRESS_MID");
-  }
-  return prefixes;
-}
-function isActivePlaceholderAt(text, index, activePrefixes, sessionId) {
-  if (!activePrefixes || activePrefixes.size === 0 || !sessionId) {
-    return false;
-  }
-  const lastOpen = text.lastIndexOf("{{", index);
-  if (lastOpen === -1) {
-    return false;
-  }
-  const lastClose = text.lastIndexOf("}}", index);
-  if (lastClose > lastOpen) {
-    return false;
-  }
-  const nextClose = text.indexOf("}}", index);
-  if (nextClose === -1) {
-    return false;
-  }
-  const content = text.slice(lastOpen + 2, nextClose);
-  const parts = content.split(":");
-  if (parts.length !== 3) {
-    return false;
-  }
-  const placeholderSession = parts[0];
-  if (placeholderSession !== sessionId) {
-    return false;
-  }
-  const label = parts[1].toUpperCase();
-  if (!/^\d+$/.test(parts[2])) {
-    return false;
-  }
-  return activePrefixes.has(label);
-}
-function mergeRulesWithPriority(baseRules2, textDictRules) {
-  if (!textDictRules || textDictRules.length === 0) {
-    return baseRules2;
-  }
-  const result = [];
-  const baseRulesCount = baseRules2.length;
-  const priority1 = [];
-  const priority2 = [];
-  const priority3 = [];
-  const priority4 = [];
-  const priority5 = [];
-  textDictRules.forEach((rule) => {
-    if (rule.priority === 1) priority1.push(rule);
-    else if (rule.priority === 2) priority2.push(rule);
-    else if (rule.priority === 3) priority3.push(rule);
-    else if (rule.priority === 4) priority4.push(rule);
-    else if (rule.priority === 5) priority5.push(rule);
+  ui2.presetSelect.addEventListener("change", () => {
+    ui2.presetName.value = ui2.presetSelect.value;
   });
-  const sortByOrder = (a, b) => a.orderInPriority - b.orderInPriority;
-  priority1.sort(sortByOrder);
-  priority2.sort(sortByOrder);
-  priority3.sort(sortByOrder);
-  priority4.sort(sortByOrder);
-  priority5.sort(sortByOrder);
-  result.push(...priority1);
-  const pos75 = Math.floor(baseRulesCount * 0.75);
-  const pos50 = Math.floor(baseRulesCount * 0.5);
-  const pos25 = Math.floor(baseRulesCount * 0.25);
-  for (let i = 0; i < baseRulesCount; i++) {
-    if (i === pos75 && priority2.length > 0) {
-      result.push(...priority2);
-    }
-    if (i === pos50 && priority3.length > 0) {
-      result.push(...priority3);
-    }
-    if (i === pos25 && priority4.length > 0) {
-      result.push(...priority4);
-    }
-    result.push(baseRules2[i]);
-  }
-  result.push(...priority5);
-  return result;
-}
-function applyRule(text, rule, placeholders, counts, activePrefixes = null, sessionId = null) {
-  if (!rule.pattern) {
-    return text;
-  }
-  const numberWidth = DEFAULT_NUMBER_WIDTH;
-  const regex = rule._compiledRegex || (rule._compiledRegex = buildRuleRegex(rule));
-  let hits = 0;
-  const placeholderKey = rule.isTextDictionary && rule.groupKey ? rule.groupKey : rule.name;
-  const replaced = text.replace(regex, (match, offset, source) => {
-    if (isActivePlaceholderAt(source, offset, activePrefixes, sessionId)) {
-      return match;
-    }
-    hits += 1;
-    return placeholders.get(placeholderKey, match, rule.prefix, numberWidth);
+  ui2.inputText.addEventListener("input", () => {
+    persistState2(readDictRows2);
   });
-  if (hits) {
-    if (rule.isTextDictionary) {
-      const label = rule.customLabel || `Custom_${rule.label}`;
-      counts[`text_dict_label:${label}`] = (counts[`text_dict_label:${label}`] || 0) + hits;
-    } else {
-      counts[rule.name] = (counts[rule.name] || 0) + hits;
-    }
+  if (ui2.useRandomSessionId) {
+    ui2.useRandomSessionId.addEventListener("change", () => {
+      updateSessionIdControls2();
+      persistState2(readDictRows2);
+      scheduleMask2();
+    });
   }
-  return replaced;
-}
-function applyAddressBlockRules(text, placeholders, counts) {
-  var _a;
-  if (!((_a = ui.useAddressDict) == null ? void 0 : _a.checked)) {
-    return text;
+  if (ui2.regenSessionId) {
+    ui2.regenSessionId.addEventListener(
+      "click",
+      () => regenerateSessionId2(maskText2)
+    );
   }
-  if (ui.useAddressBlock && !ui.useAddressBlock.checked) {
-    return text;
+  if (ui2.saveMaskedTextBtn) {
+    ui2.saveMaskedTextBtn.addEventListener("click", saveMaskedOutput2);
   }
-  if (!addressPatternChunks.length) {
-    return text;
+  if (ui2.savePlainTextBtn) {
+    ui2.savePlainTextBtn.addEventListener("click", savePlainOutput2);
   }
-  const numberWidth = DEFAULT_NUMBER_WIDTH;
-  const blockRegex = new RegExp(ADDRESS_BLOCK_PATTERN, "g");
-  const chunkRegexes = addressPatternChunks.map((chunk) => new RegExp(chunk));
-  const addressPlaceholderRegex = /\{\{[^}]*:ADDRESS:\d+\}\}/;
-  const lines = text.split(/\r?\n/);
-  let changed = false;
-  const updated = lines.map((line) => {
-    if (!line.includes("所在地") && !line.includes("所在地：") && !line.includes("所在地:")) {
-      return line;
-    }
-    const hasRegion = addressPlaceholderRegex.test(line) || chunkRegexes.some((regex) => regex.test(line));
-    if (!hasRegion) {
-      return line;
-    }
-    let hits = 0;
-    const replaced = line.replace(blockRegex, (match) => {
-      hits += 1;
-      return placeholders.get(
-        "address_block",
-        match,
-        "ADDRESS_BLOCK",
-        numberWidth
+  if (ui2.plainTextUploadBtn && ui2.plainTextFile) {
+    ui2.plainTextUploadBtn.addEventListener("click", () => {
+      ui2.plainTextFile.click();
+    });
+    ui2.plainTextFile.addEventListener("change", () => {
+      var _a;
+      loadPlainTextFile2((_a = ui2.plainTextFile.files) == null ? void 0 : _a[0], readDictRows2);
+      ui2.plainTextFile.value = "";
+    });
+  }
+  if (ui2.dictAddRow) {
+    ui2.dictAddRow.addEventListener("click", () => {
+      addDictRow2(
+        { enabled: true, prefix: "", pattern: "", regex: false },
+        scheduleMask2
       );
     });
-    const normalized = replaced.replace(/(\{\{[^}]*:ZIP:\d+\}\})\s+(?=\{\{[^}]*:ADDRESS:\d+\}\})/g, "$1").replace(
-      /(\{\{[^}]*:ADDRESS:\d+\}\})([^\s\{]{1,30})(\{\{[^}]*:ADDRESS_BLOCK:\d+\}\})/g,
-      (match, head, middle, tail) => {
-        const masked = placeholders.get(
-          "address_mid",
-          middle,
-          "ADDRESS_MID",
-          numberWidth
-        );
-        counts.address_mid = (counts.address_mid || 0) + 1;
-        return `${head}${masked}${tail}`;
-      }
+  }
+  if (ui2.dictImportBasic) {
+    ui2.dictImportBasic.addEventListener(
+      "click",
+      () => importBasicRulesToDict2(
+        renderRules2,
+        scheduleMask2,
+        savePresetWithPayload2,
+        buildStatePayload2
+      )
     );
-    if (hits) {
-      counts.address_block = (counts.address_block || 0) + hits;
-      changed = true;
-    }
-    return normalized;
+  }
+  ui2.dictDefaultPrefix.addEventListener("input", () => {
+    persistState2(readDictRows2);
+    scheduleMask2();
   });
-  return changed ? updated.join("\n") : text;
-}
-function renderStats(counts) {
-  const allEntries = [];
-  state.rules.filter((rule) => counts[rule.name]).forEach((rule) => {
-    allEntries.push(`${rule.label}: ${counts[rule.name]}`);
-  });
-  for (const [key, count] of Object.entries(counts)) {
-    const isBaseRule = state.rules.some((rule) => rule.name === key);
-    if (!isBaseRule) {
-      if (key.startsWith("text_dict_")) {
-        continue;
-      }
-      let label = key;
-      if (key.startsWith("dictionary_")) {
-        label = "辞書";
-      } else if (key.startsWith("address_")) {
-        label = "住所";
-      } else if (key.startsWith("text_dict_label:")) {
-        label = key.replace("text_dict_label:", "");
-      }
-      allEntries.push(`${label}: ${count}`);
-    }
+  ui2.toggleAllBtn.addEventListener(
+    "click",
+    () => toggleAllRules2(readDictRows2, scheduleMask2)
+  );
+  ui2.resetOrderBtn.addEventListener(
+    "click",
+    () => resetRuleOrder2(readDictRows2, scheduleMask2)
+  );
+  if (ui2.useAddressDict) {
+    ui2.useAddressDict.addEventListener("change", scheduleMask2);
   }
-  const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
-  const breakdown = allEntries.length ? allEntries.join(" / ") : "なし";
-  updateStatusDisplay(`総マスク数: ${total} （内訳: ${breakdown}）`);
-}
-async function attachDictionarySignature(dict) {
-  if (!computeDictionarySignature || !dict) {
-    return;
+  if (ui2.useAddressBlock) {
+    ui2.useAddressBlock.addEventListener("change", scheduleMask2);
   }
-  const signature = await computeDictionarySignature(dict);
-  if (!signature) {
-    return;
+  if (ui2.updateAddressDict) {
+    ui2.updateAddressDict.addEventListener(
+      "click",
+      () => updateAddressDict2()
+    );
   }
-  dict.signature = signature;
-  setCurrentMaskDictionary(dict);
-  setCurrentUnmaskDictionary(dict);
-  if (typeof window.updateUnmaskDictStatus === "function") {
-    window.updateUnmaskDictStatus(dict);
+  if (ui2.resetAddressDict) {
+    ui2.resetAddressDict.addEventListener(
+      "click",
+      () => resetAddressDict2(scheduleMask2)
+    );
   }
-}
-function maskTextSync(source, buildDictionaryRules2, buildAddressRules2, buildTextDictionaryRules2) {
-  var _a;
-  if (!currentSessionId) {
-    setCurrentSessionId(generateSessionId());
-  }
-  const includeSessionId = ((_a = ui.useRandomSessionId) == null ? void 0 : _a.checked) ?? true;
-  const placeholders = new PlaceholderMap(currentSessionId, includeSessionId);
-  const counts = {};
-  let result = source;
-  try {
-    const dictRules = buildDictionaryRules2();
-    if (dictRules === null) {
-      return false;
-    }
-    const textDictRules = buildTextDictionaryRules2 ? buildTextDictionaryRules2() : [];
-    const addressRules = buildAddressRules2();
-    const activePrefixes = collectActivePrefixes(dictRules, addressRules, textDictRules);
-    dictRules.forEach((dictRule) => {
-      result = applyRule(result, dictRule, placeholders, counts, activePrefixes, currentSessionId);
+  if (ui2.addressSearchInput) {
+    ui2.addressSearchInput.addEventListener("input", () => {
+      renderAddressSearchResults2();
     });
-    addressRules.forEach((addressRule) => {
-      result = applyRule(result, addressRule, placeholders, counts, activePrefixes, currentSessionId);
+  }
+  if (ui2.addressPrefectureList) {
+    ui2.addressPrefectureList.addEventListener("change", (event) => {
+      const target = event.target;
+      if (target instanceof HTMLInputElement && target.dataset.prefecture) {
+        handlePrefectureSelectionChange2(
+          target.dataset.prefecture,
+          target.checked,
+          scheduleMask2
+        );
+      }
     });
-    result = applyAddressBlockRules(result, placeholders, counts);
-    const mergedRules = mergeRulesWithPriority(state.rules, textDictRules);
-    mergedRules.forEach((rule) => {
-      if (!rule.enabled) {
-        return;
-      }
-      result = applyRule(result, rule, placeholders, counts, activePrefixes, currentSessionId);
+  }
+  if (ui2.addressPrefAll) {
+    ui2.addressPrefAll.addEventListener("click", () => {
+      setAllPrefecturesSelection2(true, scheduleMask2);
     });
-    ui.outputText.value = result;
-    renderStats(counts);
-    const dict = placeholders.getDictionary();
-    setCurrentMaskDictionary(dict);
-    setCurrentUnmaskDictionary(dict);
-    if (typeof window.updateUnmaskDictStatus === "function") {
-      window.updateUnmaskDictStatus(dict);
-    }
-    attachDictionarySignature(dict);
-    return true;
-  } catch (err) {
-    updateStatusDisplay("正規表現の形式が不正です。", true);
-    return false;
   }
-}
-async function maskTextAsync(source, runId, buildDictionaryRules2, buildAddressRules2, buildTextDictionaryRules2) {
-  var _a;
-  const shouldYield = source.length > ASYNC_MASK_THRESHOLD;
-  const yieldToBrowser = () => new Promise((resolve) => setTimeout(resolve, 0));
-  const isLatest = () => runId === maskRunId;
-  if (!currentSessionId) {
-    setCurrentSessionId(generateSessionId());
+  if (ui2.addressPrefNone) {
+    ui2.addressPrefNone.addEventListener("click", () => {
+      setAllPrefecturesSelection2(false, scheduleMask2);
+    });
   }
-  const includeSessionId = ((_a = ui.useRandomSessionId) == null ? void 0 : _a.checked) ?? true;
-  const placeholders = new PlaceholderMap(currentSessionId, includeSessionId);
-  const counts = {};
-  let result = source;
-  try {
-    const dictRules = buildDictionaryRules2();
-    if (dictRules === null) {
-      return;
-    }
-    const textDictRules = buildTextDictionaryRules2 ? buildTextDictionaryRules2() : [];
-    const addressRules = buildAddressRules2();
-    const activePrefixes = collectActivePrefixes(dictRules, addressRules, textDictRules);
-    for (const dictRule of dictRules) {
-      result = applyRule(result, dictRule, placeholders, counts, activePrefixes, currentSessionId);
-      if (shouldYield) {
-        await yieldToBrowser();
-        if (!isLatest()) return;
-      }
-    }
-    for (const addressRule of addressRules) {
-      result = applyRule(result, addressRule, placeholders, counts, activePrefixes, currentSessionId);
-      if (shouldYield) {
-        await yieldToBrowser();
-        if (!isLatest()) return;
-      }
-    }
-    result = applyAddressBlockRules(result, placeholders, counts);
-    const mergedRules = mergeRulesWithPriority(state.rules, textDictRules);
-    for (const rule of mergedRules) {
-      if (!rule.enabled) {
-        continue;
-      }
-      result = applyRule(result, rule, placeholders, counts, activePrefixes, currentSessionId);
-      if (shouldYield) {
-        await yieldToBrowser();
-        if (!isLatest()) return;
-      }
-    }
-    if (!isLatest()) return;
-    ui.outputText.value = result;
-    renderStats(counts);
-    const dict = placeholders.getDictionary();
-    setCurrentMaskDictionary(dict);
-    setCurrentUnmaskDictionary(dict);
-    if (typeof window.updateUnmaskDictStatus === "function") {
-      window.updateUnmaskDictStatus(dict);
-    }
-    attachDictionarySignature(dict);
-  } catch (err) {
-    updateStatusDisplay("正規表現の形式が不正です。", true);
+  if (ui2.presetToggle) {
+    ui2.presetToggle.addEventListener("click", () => {
+      var _a;
+      const isOpen = (_a = ui2.presetDock) == null ? void 0 : _a.classList.contains("is-open");
+      setPresetPanelOpen2(!isOpen);
+    });
   }
-}
-function maskText(buildDictionaryRules2, buildAddressRules2, buildTextDictionaryRules2) {
-  const source = ui.inputText.value || "";
-  const runId = incrementMaskRunId();
-  if (!source.trim()) {
-    ui.outputText.value = "";
-    updateStatusDisplay("入力テキストが空です。");
-    setCurrentMaskDictionary(null);
-    setCurrentUnmaskDictionary(null);
-    if (typeof window.updateUnmaskDictStatus === "function") {
-      window.updateUnmaskDictStatus(null);
-    }
-    return;
+  if (ui2.presetClose) {
+    ui2.presetClose.addEventListener("click", () => {
+      setPresetPanelOpen2(false);
+    });
   }
-  if (source.length > ASYNC_MASK_THRESHOLD) {
-    updateStatusDisplay("マスク処理中...");
-    maskTextAsync(source, runId, buildDictionaryRules2, buildAddressRules2, buildTextDictionaryRules2);
-    return;
-  }
-  maskTextSync(source, buildDictionaryRules2, buildAddressRules2, buildTextDictionaryRules2);
 }
 function scheduleMask() {
   return;
@@ -3081,84 +2977,25 @@ function handleDelete(id, label) {
     updateStatusDisplay("削除に失敗しました", true);
   }
 }
-function clearInput() {
-  ui.inputText.value = "";
-  ui.outputText.value = "";
-  if (ui.sampleSelect) {
-    ui.sampleSelect.value = "";
+function clearInput(ui2, updateStatusDisplay2, persistState2, readDictRows2, setCurrentMaskDictionary2, setCurrentUnmaskDictionary2, updateUnmaskDictStatus2) {
+  ui2.inputText.value = "";
+  ui2.outputText.value = "";
+  if (ui2.sampleSelect) {
+    ui2.sampleSelect.value = "";
   }
-  updateStatusDisplay("");
-  persistState(readDictRows);
-  setCurrentMaskDictionary(null);
-  setCurrentUnmaskDictionary(null);
-  updateUnmaskDictStatus(null);
+  updateStatusDisplay2("");
+  persistState2(readDictRows2);
+  setCurrentMaskDictionary2(null);
+  setCurrentUnmaskDictionary2(null);
+  updateUnmaskDictStatus2(null);
 }
-function initTextareaSync() {
-  if (!ui.inputText || !ui.outputText) {
+function setPresetPanelOpen(isOpen, ui2) {
+  if (!ui2.presetDock || !ui2.presetToggle || !ui2.presetPanel) {
     return;
   }
-  let syncing = false;
-  const applyHeight = (source, target) => {
-    if (syncing) {
-      return;
-    }
-    syncing = true;
-    target.style.height = `${source.offsetHeight}px`;
-    syncing = false;
-  };
-  if (typeof ResizeObserver !== "undefined") {
-    const observer = new ResizeObserver((entries) => {
-      entries.forEach((entry) => {
-        if (entry.target === ui.inputText) {
-          applyHeight(ui.inputText, ui.outputText);
-        } else if (entry.target === ui.outputText) {
-          applyHeight(ui.outputText, ui.inputText);
-        }
-      });
-    });
-    observer.observe(ui.inputText);
-    observer.observe(ui.outputText);
-  } else {
-    ui.inputText.addEventListener(
-      "mouseup",
-      () => applyHeight(ui.inputText, ui.outputText)
-    );
-    ui.outputText.addEventListener(
-      "mouseup",
-      () => applyHeight(ui.outputText, ui.inputText)
-    );
-    ui.inputText.addEventListener(
-      "touchend",
-      () => applyHeight(ui.inputText, ui.outputText)
-    );
-    ui.outputText.addEventListener(
-      "touchend",
-      () => applyHeight(ui.outputText, ui.inputText)
-    );
-  }
-}
-function initScrollSync() {
-  if (!ui.inputText || !ui.outputText) {
-    return;
-  }
-  let syncing = false;
-  const syncScroll = (source, target) => {
-    if (syncing) {
-      return;
-    }
-    syncing = true;
-    target.scrollTop = source.scrollTop;
-    target.scrollLeft = source.scrollLeft;
-    syncing = false;
-  };
-  ui.inputText.addEventListener(
-    "scroll",
-    () => syncScroll(ui.inputText, ui.outputText)
-  );
-  ui.outputText.addEventListener(
-    "scroll",
-    () => syncScroll(ui.outputText, ui.inputText)
-  );
+  ui2.presetDock.classList.toggle("is-open", Boolean(isOpen));
+  ui2.presetToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+  ui2.presetPanel.setAttribute("aria-hidden", isOpen ? "false" : "true");
 }
 function initTabs() {
   ui.tabs.forEach((tab) => {
@@ -3180,14 +3017,6 @@ function initTabs() {
     });
   });
 }
-function setPresetPanelOpen(isOpen) {
-  if (!ui.presetDock || !ui.presetToggle || !ui.presetPanel) {
-    return;
-  }
-  ui.presetDock.classList.toggle("is-open", Boolean(isOpen));
-  ui.presetToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
-  ui.presetPanel.setAttribute("aria-hidden", isOpen ? "false" : "true");
-}
 function init() {
   applyBrandConfig();
   state.rules = baseRules.map((rule) => ({ ...rule, enabled: true }));
@@ -3201,183 +3030,50 @@ function init() {
   loadAddressDict();
   loadTownAddressDict();
   initTextDictionaryUI();
-  if (ui.maskForwardBtn) {
-    ui.maskForwardBtn.addEventListener("click", () => maskText(buildDictionaryRules, buildAddressRules, buildTextDictionaryRules));
-  }
-  if (ui.unmaskBackwardBtn) {
-    ui.unmaskBackwardBtn.addEventListener("click", () => {
-      unmaskText(currentUnmaskDictionary);
-    });
-  }
-  if (ui.copyBtn) {
-    ui.copyBtn.addEventListener("click", copyOutput);
-  }
-  if (ui.clearBtn) {
-    ui.clearBtn.addEventListener("click", clearInput);
-  }
-  initTextareaSync();
-  initScrollSync();
-  if (ui.sampleSelect) {
-    ui.sampleSelect.addEventListener("change", () => {
-      const key = ui.sampleSelect.value;
-      if (key && SAMPLE_DATA[key]) {
-        ui.inputText.value = SAMPLE_DATA[key];
-        persistState(readDictRows);
-      }
-    });
-  }
-  ui.presetSave.addEventListener(
-    "click",
-    () => savePreset(readDictRows)
-  );
-  ui.presetLoad.addEventListener(
-    "click",
-    () => loadPreset(
-      baseRules,
-      renderRules,
-      renderDictRows,
-      readDictRows,
-      scheduleMask
-    )
-  );
-  ui.presetDelete.addEventListener("click", deletePreset);
-  ui.presetExport.addEventListener(
-    "click",
-    () => exportPresetToFile(resolveExportName, readDictRows)
-  );
-  ui.presetImport.addEventListener("click", () => ui.presetImportFile.click());
-  ui.presetImportFile.addEventListener("change", () => {
-    var _a;
-    importPresetFromFile(
-      (_a = ui.presetImportFile.files) == null ? void 0 : _a[0],
-      baseRules,
-      renderRules,
-      renderDictRows,
-      readDictRows,
-      scheduleMask
-    );
+  initializeEventListeners(ui, {
+    scheduleMask,
+    readDictRows,
+    maskText,
+    regenerateSessionId,
+    buildDictionaryRules,
+    buildAddressRules,
+    buildTextDictionaryRules,
+    setCurrentMaskDictionary,
+    setCurrentUnmaskDictionary,
+    updateUnmaskDictStatus,
+    updateStatusDisplay,
+    persistState,
+    copyOutput,
+    clearInput: () => clearInput(ui, updateStatusDisplay, persistState, readDictRows, setCurrentMaskDictionary, setCurrentUnmaskDictionary, updateUnmaskDictStatus),
+    savePreset,
+    loadPreset,
+    deletePreset,
+    exportPresetToFile,
+    resolveExportName,
+    importPresetFromFile,
+    savePresetWithPayload,
+    buildStatePayload,
+    toggleAllRules,
+    resetRuleOrder,
+    updateAddressDict,
+    resetAddressDict,
+    renderAddressSearchResults,
+    handlePrefectureSelectionChange,
+    setAllPrefecturesSelection,
+    loadPlainTextFile,
+    saveMaskedOutput,
+    savePlainOutput,
+    addDictRow,
+    importBasicRulesToDict,
+    setPresetPanelOpen: (isOpen) => setPresetPanelOpen(isOpen, ui),
+    updateSessionIdControls,
+    initUnmaskFeatures,
+    stateVars,
+    baseRules,
+    renderRules,
+    renderDictRows,
+    SAMPLE_DATA
   });
-  ui.presetSelect.addEventListener("change", () => {
-    ui.presetName.value = ui.presetSelect.value;
-  });
-  ui.inputText.addEventListener("input", () => {
-    persistState(readDictRows);
-  });
-  if (ui.useRandomSessionId) {
-    ui.useRandomSessionId.addEventListener("change", () => {
-      updateSessionIdControls();
-      persistState(readDictRows);
-    });
-  }
-  if (ui.regenSessionId) {
-    ui.regenSessionId.addEventListener(
-      "click",
-      () => regenerateSessionId(maskText)
-    );
-  }
-  if (ui.saveMaskedTextBtn) {
-    ui.saveMaskedTextBtn.addEventListener("click", saveMaskedOutput);
-  }
-  if (ui.savePlainTextBtn) {
-    ui.savePlainTextBtn.addEventListener("click", savePlainOutput);
-  }
-  if (ui.plainTextUploadBtn && ui.plainTextFile) {
-    ui.plainTextUploadBtn.addEventListener("click", () => {
-      ui.plainTextFile.click();
-    });
-    ui.plainTextFile.addEventListener("change", () => {
-      var _a;
-      loadPlainTextFile((_a = ui.plainTextFile.files) == null ? void 0 : _a[0], readDictRows);
-      ui.plainTextFile.value = "";
-    });
-  }
-  if (ui.dictAddRow) {
-    ui.dictAddRow.addEventListener("click", () => {
-      addDictRow(
-        { enabled: true, prefix: "", pattern: "", regex: false },
-        scheduleMask
-      );
-    });
-  }
-  if (ui.dictImportBasic) {
-    ui.dictImportBasic.addEventListener(
-      "click",
-      () => importBasicRulesToDict(
-        renderRules,
-        scheduleMask,
-        savePresetWithPayload,
-        buildStatePayload
-      )
-    );
-  }
-  ui.dictDefaultPrefix.addEventListener("input", () => {
-    persistState(readDictRows);
-  });
-  ui.toggleAllBtn.addEventListener(
-    "click",
-    () => toggleAllRules(readDictRows, scheduleMask)
-  );
-  ui.resetOrderBtn.addEventListener(
-    "click",
-    () => resetRuleOrder(readDictRows, scheduleMask)
-  );
-  if (ui.useAddressDict) {
-    ui.useAddressDict.addEventListener("change", scheduleMask);
-  }
-  if (ui.useAddressBlock) {
-    ui.useAddressBlock.addEventListener("change", scheduleMask);
-  }
-  if (ui.updateAddressDict) {
-    ui.updateAddressDict.addEventListener(
-      "click",
-      () => updateAddressDict()
-    );
-  }
-  if (ui.resetAddressDict) {
-    ui.resetAddressDict.addEventListener(
-      "click",
-      () => resetAddressDict(scheduleMask)
-    );
-  }
-  if (ui.addressSearchInput) {
-    ui.addressSearchInput.addEventListener("input", () => {
-      renderAddressSearchResults();
-    });
-  }
-  if (ui.addressPrefectureList) {
-    ui.addressPrefectureList.addEventListener("change", (event) => {
-      const target = event.target;
-      if (target instanceof HTMLInputElement && target.dataset.prefecture) {
-        handlePrefectureSelectionChange(
-          target.dataset.prefecture,
-          target.checked,
-          scheduleMask
-        );
-      }
-    });
-  }
-  if (ui.addressPrefAll) {
-    ui.addressPrefAll.addEventListener("click", () => {
-      setAllPrefecturesSelection(true, scheduleMask);
-    });
-  }
-  if (ui.addressPrefNone) {
-    ui.addressPrefNone.addEventListener("click", () => {
-      setAllPrefecturesSelection(false, scheduleMask);
-    });
-  }
-  if (ui.presetToggle) {
-    ui.presetToggle.addEventListener("click", () => {
-      var _a;
-      const isOpen = (_a = ui.presetDock) == null ? void 0 : _a.classList.contains("is-open");
-      setPresetPanelOpen(!isOpen);
-    });
-  }
-  if (ui.presetClose) {
-    ui.presetClose.addEventListener("click", () => {
-      setPresetPanelOpen(false);
-    });
-  }
   persistState(readDictRows);
   initTabs();
   updateSessionIdControls();
